@@ -1,0 +1,21 @@
+# .NET build output
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userprefs
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# Tooling artifacts
+*.log
+*.tmp
+
+# Local Claude Code overrides (keep checked-in skills under .claude/skills/)
+.claude/settings.local.json
+.claude/.session*
