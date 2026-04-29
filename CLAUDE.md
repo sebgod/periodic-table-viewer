@@ -37,7 +37,7 @@ Atomic weights, atomic-mass synthetic flags, electron configurations, and catego
 
 The widget renders 18 cols × 9 rows. Periods 1–7 are the main grid. Lanthanides (Z=57–71) occupy row 8 cols 3–17; actinides (Z=89–103) row 9 cols 3–17. La and Ac live only in the f-block rows; the (col=3, row=6) and (col=3, row=7) cells in the main grid render as "*" placeholders pointing to the f-block — this is the most common educational layout (not the IUPAC 2021 group-3 = Lu/Lr variant).
 
-Each cell is 4 cols × 3 rows (atomic number top-left, symbol centered, atomic mass bottom). One blank row separates main grid from f-block. Total rendered area: 72 × 28 terminal cells.
+Each cell is 5 cols × 3 rows (atomic number top-left, symbol centered, atomic mass bottom; the 5th col is padding so adjacent masses don't run together). One blank row separates main grid from f-block. Total rendered area: 90 × 28 terminal cells.
 
 ### Soft-rendered text (`PT.Tui/Soft/` — pending Console.Lib bump)
 
@@ -53,6 +53,26 @@ Console.Lib treats one char = one cell. The periodic table cell + decay chain pa
 `SubscriptsTests.cs` here can also be deleted — equivalent tests now live in Console.Lib.Tests.
 
 `SixelDecayChainPanel` stays here — it's chemistry-specific and not generic enough to promote.
+
+### Font path resolution (`SixelDecayChainPanel.FindSystemFont` — pending DIR.Lib bump)
+
+`FindSystemFont()` inside `SixelDecayChainPanel` walks a list of candidate TTF paths (Consolas/Courier on Windows, Menlo/DejaVu otherwise) to feed `RgbaImageRenderer.DrawText`. The same logic exists in `tianwen/src/TianWen.UI.Abstractions/FontResolver.cs`.
+
+**Status:** promoted upstream into `DIR.Lib` `main` as `DIR.Lib.FontResolver.ResolveSystemFont()` (DIR.Lib commit `c5e2013`). Note the upstream API returns `string` ("" for not found), not `string?` — match its semantics when migrating.
+
+Once a new DIR.Lib package ships *and* a Console.Lib release transitively pulls it in (Console.Lib's `<ProjectReference>` to DIR.Lib falls back to the package when the sibling repo isn't present, so the package consumer chain is what matters):
+
+1. Delete `FindSystemFont` from `src/PT.Tui/Soft/SixelDecayChainPanel.cs`.
+2. In `Program.cs`, replace
+   ```csharp
+   var fontPath = term.HasSixelSupport ? SixelDecayChainPanel.FindSystemFont() : null;
+   ```
+   with
+   ```csharp
+   var resolved = term.HasSixelSupport ? DIR.Lib.FontResolver.ResolveSystemFont() : "";
+   string? fontPath = resolved.Length > 0 ? resolved : null;
+   ```
+   The `string? fontPath` panel parameter stays — empty-string from the resolver maps to `null` for the panel's own "Sixel disabled" branch.
 
 ### Console.Lib relationship
 
