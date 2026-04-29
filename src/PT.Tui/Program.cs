@@ -48,15 +48,32 @@ internal static class Program
             fontPath);
 
         var detail = new DetailPanel(panel.Dock(DockStyle.Bottom, DetailPanel.Rows));
+
+        // Orbital panel: docks on the right when the terminal is wide enough
+        // at startup. The check uses the root viewport's initial size — once
+        // the dock layout is fixed we can't change it, so a too-narrow
+        // terminal just gets no orbital panel until the user restarts.
+        // Threshold: table width (72) + a couple of margin cells + the
+        // panel's own minimum.
+        OrbitalPanel? orbital = null;
+        if (term.Size.Width >= PeriodicTableWidget.RenderedWidth + 2 + OrbitalPanel.MinViewportCols)
+        {
+            orbital = new OrbitalPanel(
+                panel.Dock(DockStyle.Right, OrbitalPanel.DockedWidth),
+                fontPath);
+        }
+
         var fill = panel.Fill();
         var table = new PeriodicTableWidget(fill);
 
         panel.Add(header).Add(detail).Add(chainPanel).Add(table).Add(status);
+        if (orbital is not null) panel.Add(orbital);
 
         void Refresh(Element e)
         {
             detail.SetElement(e);
             chainPanel.SetElement(e);
+            orbital?.SetElement(e);
             status.Text($"  {e.Symbol} · {e.Name}  ")
                   .RightText($"  Z={e.AtomicNumber}  {e.Category}  ");
         }

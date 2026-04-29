@@ -50,7 +50,10 @@ public sealed class DetailPanel : CL.Widget
             : _element.AtomicWeight.ToString("F4");
         Write(3, "  atomic weight: ", dim, weight, value);
 
-        Write(4, "  config: ", dim, _element.ElectronConfiguration, value);
+        // Detail panel shows the expanded ("non-shorthand") configuration so
+        // the full shell structure is visible. The orbital panel on the right
+        // shows the noble-gas shorthand for the compact view.
+        Write(4, "  config: ", dim, ElectronConfig.Expand(_element), value);
     }
 
     private void Write(int row, string left, CL.VtStyle leftStyle, string right, CL.VtStyle rightStyle)
