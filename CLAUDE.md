@@ -39,13 +39,20 @@ The widget renders 18 cols × 9 rows. Periods 1–7 are the main grid. Lanthanid
 
 Each cell is 4 cols × 3 rows (atomic number top-left, symbol centered, atomic mass bottom). One blank row separates main grid from f-block. Total rendered area: 72 × 28 terminal cells.
 
-### Soft-rendered text prototype (`PT.Tui/Soft/`)
+### Soft-rendered text (`PT.Tui/Soft/` — pending Console.Lib bump)
 
-Console.Lib today treats one char = one cell. The periodic table needs a multi-cell rectangular text block with per-line alignment and styled spans (atomic number, symbol, mass — three logical "lines" in a 4×3 cell). `SoftText` / `SoftLine` / `SoftSpan` model that, and `SoftRenderer` paints it into a viewport rectangle.
+Console.Lib treats one char = one cell. The periodic table cell + decay chain panel both need multi-cell rectangular text blocks with per-line alignment and styled spans. `SoftText` / `SoftLine` / `SoftSpan` model that and `SoftRenderer` paints into a viewport rectangle. `Subscripts` (in `src/PT`) gives Unicode ⁰¹²₀₁₂ helpers.
 
-This prototype lives in this repo so we can iterate quickly. **It is destined to move upstream into Console.Lib once the API has settled** — at that point delete `src/PT.Tui/Soft/`, bump the `Console.Lib` package reference, and replace `using PeriodicTable.Tui.Soft;` with `using CL.Soft;` (or whatever the upstream namespace ends up being).
+**Status:** these have been **promoted upstream into Console.Lib `main`** as `Console.Lib.SoftText` / `SoftRenderer` / `Subscripts` (commit `78a93d7`). They will ship in the next published `2.4.<run>` package. Once that lands:
 
-`Subscripts` is in the `PT` library (not under `Soft/`) because it has no Console.Lib dependency and is independently useful.
+1. Bump `<PackageReference Include="Console.Lib" Version="2.4.X">` in `PT.Tui.csproj` to the new run number.
+2. Delete `src/PT.Tui/Soft/SoftText.cs`, `src/PT.Tui/Soft/SoftRenderer.cs`, and `src/PT/Subscripts.cs`.
+3. Replace `using PeriodicTable.Tui.Soft;` with `using Console.Lib;` in the consumers (`PeriodicTableWidget.cs`, `SixelDecayChainPanel.cs`).
+4. Replace `using PeriodicTable;` (for `Subscripts`) with the same `using Console.Lib;` in `SixelDecayChainPanel.cs`.
+
+`SubscriptsTests.cs` here can also be deleted — equivalent tests now live in Console.Lib.Tests.
+
+`SixelDecayChainPanel` stays here — it's chemistry-specific and not generic enough to promote.
 
 ### Console.Lib relationship
 
