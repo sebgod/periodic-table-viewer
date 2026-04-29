@@ -1,3 +1,4 @@
+using System.Text;
 using DIR.Lib;
 using PeriodicTable;
 using PeriodicTable.Tui.Soft;
@@ -30,7 +31,7 @@ internal static class Program
 
         var header = new CL.TextBar(panel.Dock(DockStyle.Top, 1))
             .Text(" Periodic Table Viewer ")
-            .RightText(" ←↑→↓ navigate · q quit  ")
+            .RightText(" ←↑→↓ navigate · click isotope · y yank · q quit  ")
             .Style(new CL.VtStyle(CL.SgrColor.Black, CL.SgrColor.White));
 
         var status = new CL.TextBar(panel.Dock(DockStyle.Bottom, 1))
@@ -80,7 +81,15 @@ internal static class Program
                 var ev = term.TryReadInput();
                 if (ev.Mouse is { } m)
                 {
-                    if (table.HandleMouse(m)) dirty = true;
+                    // Decay panel gets the click first — its viewport is below
+                    // the table's, so a click there must not also fire on the
+                    // table. On a hit, jump table selection to the isotope's
+                    // element so the rest of the UI (detail, status) follows.
+                    if (chainPanel.TryClick(m, out var iso))
+                    {
+                        if (table.SelectByZ(iso.Z)) dirty = true;
+                    }
+                    else if (table.HandleMouse(m)) dirty = true;
                     continue;
                 }
                 if (ev.Key == ConsoleKey.Q || ev.Key == ConsoleKey.Escape)
@@ -88,10 +97,35 @@ internal static class Program
                     quit = true;
                     break;
                 }
+                if (ev.Key == ConsoleKey.Y && ev.Modifiers == 0)
+                {
+                    if (chainPanel.GetChainPlainText() is { } text)
+                    {
+                        WriteOsc52(term, text);
+                        status.Text($"  Copied: {text[..Math.Min(60, text.Length)]}…  ");
+                        dirty = true;
+                    }
+                    continue;
+                }
                 if (table.HandleKey(ev.Key, ev.Modifiers)) dirty = true;
             }
             await Task.Delay(20);
         }
+    }
+
+    /// <summary>
+    /// Emits the OSC 52 "set selection clipboard" escape, asking the terminal
+    /// to put <paramref name="text"/> on the system clipboard. Universally
+    /// supported in modern terminals (Windows Terminal, iTerm2, kitty,
+    /// foot, etc.) — no native clipboard P/Invoke needed. Useful here because
+    /// the Sixel-rendered isotope notation is not selectable via the
+    /// terminal's own drag-select.
+    /// </summary>
+    private static void WriteOsc52(CL.IVirtualTerminal term, string text)
+    {
+        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+        term.Write($"\u001b]52;c;{b64}\u0007");
+        term.Flush();
     }
 
     private static void PrintNonInteractive()

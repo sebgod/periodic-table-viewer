@@ -34,6 +34,11 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
     private Element _element = Elements.ByAtomicNumber[1];
     private DecayChain? _chain;
 
+    // Cell-aligned hit regions (panel-local coords) populated during Render so
+    // clicks can be mapped back to the isotope under the cursor — works for
+    // both the Sixel tiles and the text-fallback tokens. Cleared each frame.
+    private readonly List<(int Left, int Top, int Width, int Height, Isotope Iso)> _hits = [];
+
     public SixelDecayChainPanel(CL.ITerminalViewport viewport, string? fontPath)
         : base(viewport)
     {
@@ -48,6 +53,7 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
 
     public override void Render()
     {
+        _hits.Clear();
         var mode = Viewport.ColorMode;
         int width = Viewport.Size.Width;
         if (width <= 0) return;
@@ -130,6 +136,7 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         DrawIsotopeTile(r, x, tileW, pxH, _chain.Start,
             _chain.Start.Z == _element.AtomicNumber ? hilite : (RGBAColor32?)null,
             fg, dim);
+        AddSixelHit(x, tileW, cell.Width, _chain.Start);
         x += tileW;
 
         for (int i = 0; i < n; i++)
@@ -142,6 +149,7 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
             var symFg = isEnd ? endColor : fg;
             var bgHi = step.Daughter.Z == _element.AtomicNumber ? hilite : (RGBAColor32?)null;
             DrawIsotopeTile(r, x, tileW, pxH, step.Daughter, bgHi, symFg, dim);
+            AddSixelHit(x, tileW, cell.Width, step.Daughter);
             x += tileW;
         }
 
@@ -227,18 +235,26 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         var hilite = new CL.VtStyle(CL.SgrColor.Black, CL.SgrColor.BrightYellow);
         var mode = Viewport.ColorMode;
 
-        var sb = new System.Text.StringBuilder("  ");
-        AppendIsotope(sb, _chain.Start, mode,
-            _chain.Start.Z == _element.AtomicNumber ? hilite : labelStyle);
+        // Track visible-cell column as we build the output. _hits gets one
+        // entry per isotope token spanning the supers + symbol cells, so a
+        // click on those cells maps back to the isotope.
+        const int LeadIndent = 2;
+        int col = LeadIndent;
+        var sb = new System.Text.StringBuilder(new string(' ', LeadIndent));
+
+        col += AppendIsotope(sb, _chain.Start, mode,
+            _chain.Start.Z == _element.AtomicNumber ? hilite : labelStyle, col);
         for (int i = 0; i < _chain.Steps.Count; i++)
         {
             var step = _chain.Steps[i];
-            sb.Append($" {modeStyle.Apply(mode)}→{step.Mode.Symbol()}{CL.VtStyle.Reset} ");
+            sb.Append($" {modeStyle.Apply(mode)}\u2192{step.Mode.Symbol()}{CL.VtStyle.Reset} ");
+            // " →α " visible width: 1 + 1 + visible(modeSym) + 1
+            col += 3 + step.Mode.Symbol().Length;
             var isEnd = step.Daughter == _chain.End;
             var style = step.Daughter.Z == _element.AtomicNumber ? hilite
                       : isEnd ? endStyle
                       : labelStyle;
-            AppendIsotope(sb, step.Daughter, mode, style);
+            col += AppendIsotope(sb, step.Daughter, mode, style, col);
         }
 
         if (TrySetCursorPosition(Viewport, 0, 2))
@@ -252,13 +268,79 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         // Row 3 (second of ChainPixelRows) stays blank in text mode.
     }
 
-    private static void AppendIsotope(
-        System.Text.StringBuilder sb, Isotope iso, CL.ColorMode mode, CL.VtStyle style)
+    /// <summary>Appends the isotope token and records its hit region. Returns visible cells written.</summary>
+    private int AppendIsotope(
+        System.Text.StringBuilder sb, Isotope iso, CL.ColorMode mode, CL.VtStyle style, int startCol)
     {
         sb.Append(style.Apply(mode));
-        sb.Append(Subscripts.Super(iso.A.ToString()));
+        var supers = Subscripts.Super(iso.A.ToString());
+        sb.Append(supers);
         sb.Append(iso.Symbol);
         sb.Append(CL.VtStyle.Reset);
+        int visible = supers.Length + iso.Symbol.Length;
+        // Text fallback paints into row 2 only.
+        _hits.Add((startCol, 2, visible, 1, iso));
+        return visible;
+    }
+
+    private void AddSixelHit(int pxLeft, int pxWidth, uint cellPxW, Isotope iso)
+    {
+        if (cellPxW == 0) return;
+        // Sixel surface is anchored at panel-local (col=0, row=2). Map the
+        // tile's pixel range onto the cell range it visually covers.
+        int colLeft = pxLeft / (int)cellPxW;
+        int colRight = (pxLeft + pxWidth + (int)cellPxW - 1) / (int)cellPxW;
+        _hits.Add((colLeft, 2, colRight - colLeft, ChainPixelRows, iso));
+    }
+
+    /// <summary>Returns the isotope occupying the given panel-local cell, if any.</summary>
+    public Isotope? IsotopeAt(int col, int row)
+    {
+        foreach (var h in _hits)
+            if (col >= h.Left && col < h.Left + h.Width
+             && row >= h.Top && row < h.Top + h.Height)
+                return h.Iso;
+        return null;
+    }
+
+    /// <summary>Maps a mouse-down inside this panel to the clicked isotope.</summary>
+    public bool TryClick(CL.MouseEvent ev, out Isotope iso)
+    {
+        iso = default;
+        if (ev.IsRelease || ev.Button != 0) return false;
+        if (HitTest(ev.X, ev.Y) is not { } cell) return false;
+        if (IsotopeAt(cell.Col, cell.Row) is not { } found) return false;
+        iso = found;
+        return true;
+    }
+
+    /// <summary>
+    /// Plain-text representation of the current chain, suitable for OSC-52 yank
+    /// or piping to anywhere that expects copyable text. ASCII-only (no
+    /// Unicode supers) so it round-trips cleanly through clipboards that don't
+    /// preserve UTF-8.
+    /// </summary>
+    public string? GetChainPlainText()
+    {
+        if (_chain is null) return null;
+        var sb = new System.Text.StringBuilder();
+        sb.Append(_chain.Name).Append(": ");
+        sb.Append(_chain.Start);
+        foreach (var step in _chain.Steps)
+        {
+            string m = step.Mode switch
+            {
+                DecayMode.Alpha => "alpha",
+                DecayMode.BetaMinus => "beta-",
+                DecayMode.BetaPlus => "beta+",
+                DecayMode.ElectronCapture => "EC",
+                DecayMode.SpontaneousFission => "SF",
+                DecayMode.IsomericTransition => "IT",
+                _ => "?",
+            };
+            sb.Append(" --").Append(m).Append("--> ").Append(step.Daughter);
+        }
+        return sb.ToString();
     }
 
     private static int ApproxVisibleLength(string s)

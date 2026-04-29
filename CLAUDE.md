@@ -74,6 +74,21 @@ Once a new DIR.Lib package ships *and* a Console.Lib release transitively pulls 
    ```
    The `string? fontPath` panel parameter stays — empty-string from the resolver maps to `null` for the panel's own "Sixel disabled" branch.
 
+### OSC 52 clipboard (`Program.WriteOsc52` — pending Console.Lib bump)
+
+The `y` keybind copies the current decay-chain plain text to the system clipboard via OSC 52. The local `WriteOsc52(IVirtualTerminal, string)` helper in `Program.cs` is a placeholder — the same logic has been promoted upstream as `Console.Lib.Clipboard.SetText(ITerminalViewport, string)` (Console.Lib commit `3f74dab`).
+
+Once a Console.Lib package containing it ships:
+
+1. Delete `WriteOsc52` from `src/PT.Tui/Program.cs` (and the `using System.Text;` if no longer needed).
+2. Replace the call site `WriteOsc52(term, text);` with `CL.Clipboard.SetText(term, text);`.
+
+### TUI controls — clickable isotopes
+
+In addition to navigating the periodic table, the decay-chain panel registers cell-aligned hit regions per isotope tile (Sixel path) or per isotope token (text-fallback path). Clicking maps back to the underlying `Isotope`, and `PeriodicTableWidget.SelectByZ` jumps the table selection. Mouse dispatch in `Program.cs` tries `chainPanel.TryClick(m, out _)` first, then falls back to `table.HandleMouse(m)`.
+
+The `y` keybind yanks the current chain via OSC 52 (see above). The Sixel-rendered isotope notation isn't selectable via the terminal's drag-select, so this is the path for "copy the chain text" when Sixel is on.
+
 ### Console.Lib relationship
 
 `Console.Lib` is a NuGet dependency, but its source lives at `../../sharpastro/Console.Lib` (separate repo). When iterating on widget changes, edit upstream, push to `SharpAstro/Console.Lib` `main`, wait for CI to publish (`2.4.<run_number>`), then bump `<PackageReference Version>` in `PT.Tui.csproj`. CI run numbers tick by ~10 per push for that repo.

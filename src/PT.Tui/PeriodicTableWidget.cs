@@ -162,6 +162,10 @@ public sealed class PeriodicTableWidget : CL.Widget
         }
     }
 
+    /// <summary>Programmatically select an element by atomic number; e.g. from a decay-chain click.</summary>
+    public bool SelectByZ(int z)
+        => Elements.ByAtomicNumber.TryGetValue(z, out var e) && Select(e);
+
     public bool HandleMouse(CL.MouseEvent ev)
     {
         if (ev.IsRelease || ev.Button != 0) return false;
