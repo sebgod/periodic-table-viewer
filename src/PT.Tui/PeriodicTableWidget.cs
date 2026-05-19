@@ -1,4 +1,4 @@
-using PeriodicTable.Tui.Soft;
+using Console.Lib;
 using CL = global::Console.Lib;
 
 namespace PeriodicTable.Tui;

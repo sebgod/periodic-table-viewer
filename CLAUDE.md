@@ -39,49 +39,25 @@ The widget renders 18 cols × 9 rows. Periods 1–7 are the main grid. Lanthanid
 
 Each cell is 5 cols × 3 rows (atomic number top-left, symbol centered, atomic mass bottom; the 5th col is padding so adjacent masses don't run together). One blank row separates main grid from f-block. Total rendered area: 90 × 28 terminal cells.
 
-### Soft-rendered text (`PT.Tui/Soft/` — pending Console.Lib bump)
+### Soft-rendered text (`Console.Lib.SoftText`)
 
-Console.Lib treats one char = one cell. The periodic table cell + decay chain panel both need multi-cell rectangular text blocks with per-line alignment and styled spans. `SoftText` / `SoftLine` / `SoftSpan` model that and `SoftRenderer` paints into a viewport rectangle. `Subscripts` (in `src/PT`) gives Unicode ⁰¹²₀₁₂ helpers.
+Console.Lib treats one char = one cell. The periodic table cell + decay chain panel both need multi-cell rectangular text blocks with per-line alignment and styled spans. `Console.Lib.SoftText` / `SoftLine` / `SoftSpan` model that and `Console.Lib.SoftRenderer` paints into a viewport rectangle. `Console.Lib.Subscripts` provides Unicode ⁰¹²₀₁₂ helpers.
 
-**Status:** these have been **promoted upstream into Console.Lib `main`** as `Console.Lib.SoftText` / `SoftRenderer` / `Subscripts` (commit `78a93d7`). They will ship in the next published `2.4.<run>` package. Once that lands:
+These were prototyped under `src/PT.Tui/Soft/` and `src/PT/Subscripts.cs`; they have been promoted upstream and are now consumed via `using Console.Lib;` directly. `SixelDecayChainPanel` and `OrbitalPanel` still live under `src/PT.Tui/Soft/` because they are chemistry-specific and not generic enough to promote.
 
-1. Bump `<PackageReference Include="Console.Lib" Version="2.4.X">` in `PT.Tui.csproj` to the new run number.
-2. Delete `src/PT.Tui/Soft/SoftText.cs`, `src/PT.Tui/Soft/SoftRenderer.cs`, and `src/PT/Subscripts.cs`.
-3. Replace `using PeriodicTable.Tui.Soft;` with `using Console.Lib;` in the consumers (`PeriodicTableWidget.cs`, `SixelDecayChainPanel.cs`).
-4. Replace `using PeriodicTable;` (for `Subscripts`) with the same `using Console.Lib;` in `SixelDecayChainPanel.cs`.
+### Sixel transparency (reverted)
 
-`SubscriptsTests.cs` here can also be deleted — equivalent tests now live in Console.Lib.Tests.
+`SixelDecayChainPanel` and `OrbitalPanel` initialise their Sixel surface with an opaque-black fill (alpha=255). Earlier versions used alpha=0 + P2=1 so the encoder would skip empty pixels and the terminal would preserve the underlying pre-painted text cells, saving Sixel bytes. That worked on xterm/foot but broke on Windows Terminal: WT does not clear already-emitted Sixel pixels when the underlying cell is overwritten with a text space, so transparent regions in a new frame leaked the previous frame's tiles/lobes (visible as "Th/Pa/Ra/U" pile-ups in the decay-chain strip when stepping through actinides whose chain layouts differ).
 
-`SixelDecayChainPanel` stays here — it's chemistry-specific and not generic enough to promote.
+Each frame now fully repaints its band, eliminating ghosting at the cost of a larger Sixel payload — acceptable since these panels only redraw on input. `SixelDecayChainPanel`'s `WriteRow` blanking of rows 2-3 and `OrbitalPanel`'s canvas-row pre-clear loop are kept as belt-and-suspenders for the text-fallback path and in case alpha-0 is reintroduced.
 
-### Font path resolution (`SixelDecayChainPanel.FindSystemFont` — pending DIR.Lib bump)
+### Font path resolution
 
-`FindSystemFont()` inside `SixelDecayChainPanel` walks a list of candidate TTF paths (Consolas/Courier on Windows, Menlo/DejaVu otherwise) to feed `RgbaImageRenderer.DrawText`. The same logic exists in `tianwen/src/TianWen.UI.Abstractions/FontResolver.cs`.
+Use `DIR.Lib.FontResolver.ResolveSystemFont()` to find a system monospace TTF. Returns `""` (not `null`) when no candidate exists — `Program.cs` maps empty to `null` because the panels' `string? fontPath` parameter signals "Sixel disabled" via `null`.
 
-**Status:** promoted upstream into `DIR.Lib` `main` as `DIR.Lib.FontResolver.ResolveSystemFont()` (DIR.Lib commit `c5e2013`). Note the upstream API returns `string` ("" for not found), not `string?` — match its semantics when migrating.
+### OSC 52 clipboard
 
-Once a new DIR.Lib package ships *and* a Console.Lib release transitively pulls it in (Console.Lib's `<ProjectReference>` to DIR.Lib falls back to the package when the sibling repo isn't present, so the package consumer chain is what matters):
-
-1. Delete `FindSystemFont` from `src/PT.Tui/Soft/SixelDecayChainPanel.cs`.
-2. In `Program.cs`, replace
-   ```csharp
-   var fontPath = term.HasSixelSupport ? SixelDecayChainPanel.FindSystemFont() : null;
-   ```
-   with
-   ```csharp
-   var resolved = term.HasSixelSupport ? DIR.Lib.FontResolver.ResolveSystemFont() : "";
-   string? fontPath = resolved.Length > 0 ? resolved : null;
-   ```
-   The `string? fontPath` panel parameter stays — empty-string from the resolver maps to `null` for the panel's own "Sixel disabled" branch.
-
-### OSC 52 clipboard (`Program.WriteOsc52` — pending Console.Lib bump)
-
-The `y` keybind copies the current decay-chain plain text to the system clipboard via OSC 52. The local `WriteOsc52(IVirtualTerminal, string)` helper in `Program.cs` is a placeholder — the same logic has been promoted upstream as `Console.Lib.Clipboard.SetText(ITerminalViewport, string)` (Console.Lib commit `3f74dab`).
-
-Once a Console.Lib package containing it ships:
-
-1. Delete `WriteOsc52` from `src/PT.Tui/Program.cs` (and the `using System.Text;` if no longer needed).
-2. Replace the call site `WriteOsc52(term, text);` with `CL.Clipboard.SetText(term, text);`.
+The `y` keybind copies the current decay-chain plain text via `Console.Lib.Clipboard.SetText(term, text)`. The Sixel-rendered isotope notation isn't selectable via the terminal's drag-select, so this is the path for "copy the chain text" when Sixel is on.
 
 ### TUI controls — clickable isotopes
 
@@ -91,7 +67,7 @@ The `y` keybind yanks the current chain via OSC 52 (see above). The Sixel-render
 
 ### Console.Lib relationship
 
-`Console.Lib` is a NuGet dependency, but its source lives at `../../sharpastro/Console.Lib` (separate repo). When iterating on widget changes, edit upstream, push to `SharpAstro/Console.Lib` `main`, wait for CI to publish (`2.4.<run_number>`), then bump `<PackageReference Version>` in `PT.Tui.csproj`. CI run numbers tick by ~10 per push for that repo.
+`Console.Lib` is a NuGet dependency, but its source lives at `../../sharpastro/Console.Lib` (separate repo). When iterating on widget changes, edit upstream, push to `SharpAstro/Console.Lib` `main`, wait for CI to publish (`2.<minor>.<run_number>`), then bump `<PackageReference Version>` in `PT.Tui.csproj`. CI run numbers tick by ~10 per push for that repo. `DIR.Lib` is pulled in transitively via Console.Lib.
 
 ### TUI controls
 

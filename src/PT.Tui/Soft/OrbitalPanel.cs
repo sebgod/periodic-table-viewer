@@ -89,6 +89,17 @@ public sealed class OrbitalPanel : CL.Widget, IDisposable
             legendRows = Math.Min(4, size.Height - canvasTop - canvasRows);
         }
 
+        // Pre-clear the canvas rows before Sixel renders. The Sixel surface
+        // is filled with alpha=0 (transparent) inside TryRenderSixel — pixels
+        // outside the orbital lobes are skipped by the encoder so the terminal
+        // keeps whatever cell content is already there. Without this pre-clear
+        // a previous frame's lobes would ghost through when the user changes
+        // element. RenderTextFallback paints its own cells, so we only do this
+        // when the Sixel path will run.
+        if (_fontPath is not null && canvasRows > 0)
+            for (int r = 0; r < canvasRows; r++)
+                WriteRow(canvasTop + r, "│", dimStyle, size.Width);
+
         int n = PrincipalQuantumNumber(_element, orbital);
         bool sixelOk = _fontPath is not null
                     && canvasRows > 0
@@ -154,6 +165,13 @@ public sealed class OrbitalPanel : CL.Widget, IDisposable
         }
 
         var r = _renderer;
+        // Opaque-black fill: each frame fully repaints the canvas so a
+        // previous element's lobes cannot ghost through. We previously used
+        // alpha=0 + P2=1 to skip empty pixels for byte-count savings, but
+        // Windows Terminal does not clear already-emitted Sixel pixels when
+        // the cell is overwritten with a text space, so transparent regions
+        // in the new frame leaked the prior orbital. The pre-clear loop in
+        // Render is now belt-and-suspenders.
         var bg = new RGBAColor32(0, 0, 0, 255);
         r.FillRectangle(new RectInt(new PointInt(pxW, pxH), new PointInt(0, 0)), bg);
 

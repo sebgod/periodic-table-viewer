@@ -1,4 +1,3 @@
-using System.Text;
 using DIR.Lib;
 using PeriodicTable;
 using PeriodicTable.Tui.Soft;
@@ -42,7 +41,10 @@ internal static class Program
         // Sixel rendering is opt-in: requires both terminal capability and a
         // resolvable system font; otherwise the panel falls back to a
         // text-only chain on a single line.
-        var fontPath = term.HasSixelSupport ? SixelDecayChainPanel.FindSystemFont() : null;
+        // FontResolver returns "" when no candidate is found; the panels expect
+        // null for that "Sixel disabled" branch, so map empty -> null here.
+        var resolved = term.HasSixelSupport ? FontResolver.ResolveSystemFont() : "";
+        string? fontPath = resolved.Length > 0 ? resolved : null;
         var chainPanel = new SixelDecayChainPanel(
             panel.Dock(DockStyle.Bottom, SixelDecayChainPanel.Rows),
             fontPath);
@@ -118,7 +120,7 @@ internal static class Program
                 {
                     if (chainPanel.GetChainPlainText() is { } text)
                     {
-                        WriteOsc52(term, text);
+                        CL.Clipboard.SetText(term, text);
                         status.Text($"  Copied: {text[..Math.Min(60, text.Length)]}…  ");
                         dirty = true;
                     }
@@ -128,21 +130,6 @@ internal static class Program
             }
             await Task.Delay(20);
         }
-    }
-
-    /// <summary>
-    /// Emits the OSC 52 "set selection clipboard" escape, asking the terminal
-    /// to put <paramref name="text"/> on the system clipboard. Universally
-    /// supported in modern terminals (Windows Terminal, iTerm2, kitty,
-    /// foot, etc.) — no native clipboard P/Invoke needed. Useful here because
-    /// the Sixel-rendered isotope notation is not selectable via the
-    /// terminal's own drag-select.
-    /// </summary>
-    private static void WriteOsc52(CL.IVirtualTerminal term, string text)
-    {
-        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
-        term.Write($"\u001b]52;c;{b64}\u0007");
-        term.Flush();
     }
 
     private static void PrintNonInteractive()
