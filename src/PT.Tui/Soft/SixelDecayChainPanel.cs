@@ -103,7 +103,7 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
 
     /// <summary>Mass-number superscript + symbol, ready for direct insertion into markdown source.</summary>
     private static string IsotopeText(Isotope iso)
-        => CL.Subscripts.Super(iso.A.ToString()) + iso.Symbol;
+        => Subscripts.Super(iso.A.ToString()) + iso.Symbol;
 
     private bool TryRenderSixel(int viewportCols)
     {
