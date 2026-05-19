@@ -15,6 +15,17 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PT\PT.csproj" />
+  </ItemGroup>
+
+  <!-- Console.Lib + transitive DIR.Lib: sibling-repo trick. When both
+       SharpAstro working copies exist next to this repo, build against
+       them via ProjectReference so changes to either are picked up
+       without a NuGet bump. CI builds (and any clone without the siblings)
+       fall through to the published PackageReference. -->
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\..\..\sharpastro\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
     <PackageReference Include="Console.Lib" Version="2.12.731" />
   </ItemGroup>
 </Project>

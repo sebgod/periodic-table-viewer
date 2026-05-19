@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Auto-detect sibling SharpAstro working copies for fast in-tree iteration.
+    When the sibling repos exist locally, their projects are used via
+    ProjectReference; CI and package-only builds fall through to the
+    PackageReference branch automatically.
+
+    Mirrors the pattern used in ../../sharpastro/tianwen/src/Directory.Build.props.
+
+    Override: dotnet build -p:UseLocalSiblings=false
+  -->
+  <PropertyGroup>
+    <UseLocalSiblings Condition="'$(UseLocalSiblings)' == ''
+      AND Exists('$(MSBuildThisFileDirectory)..\..\..\sharpastro\Console.Lib\src\Console.Lib\Console.Lib.csproj')
+      AND Exists('$(MSBuildThisFileDirectory)..\..\..\sharpastro\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj')">true</UseLocalSiblings>
+  </PropertyGroup>
+
+</Project>
