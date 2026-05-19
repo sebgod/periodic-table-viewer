@@ -1,3 +1,4 @@
+using Console.Lib;
 using DIR.Lib;
 using PeriodicTable;
 using CL = global::Console.Lib;
@@ -58,18 +59,19 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         int width = Viewport.Size.Width;
         if (width <= 0) return;
 
-        var labelStyle = new CL.VtStyle(CL.SgrColor.BrightWhite, CL.SgrColor.Black);
         var dimStyle = new CL.VtStyle(CL.SgrColor.BrightBlack, CL.SgrColor.Black);
 
         // Row 0: top divider.
         if (TrySetCursorPosition(Viewport, 0, 0))
             Viewport.Write(new string('\u2500', width));
 
-        // Row 1: chain caption.
+        // Row 1: chain caption (rendered through MarkdownRenderer so the chain
+        // name and selected symbol get markdown bold styling and the legend
+        // row below shares the same rendering path).
         var caption = _chain is null
-            ? $"  {_element.Symbol} ({_element.Name}): no curated decay chain"
-            : $"  {_chain.Name} — selected: {_element.Symbol}";
-        WriteRow(1, caption, labelStyle, width);
+            ? $"  **{_element.Symbol}** ({_element.Name}): no curated decay chain"
+            : $"  **{_chain.Name}** — selected: **{_element.Symbol}**";
+        WriteMarkdownRow(1, caption, width);
 
         // Rows 2..2+ChainPixelRows-1: blank first, then either Sixel or text overlay.
         for (int r = 2; r < 2 + ChainPixelRows; r++)
@@ -86,13 +88,22 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
 
         // Last row: legend showing the relevant decay step from the selected
         // isotope. Useful when there are too many steps to read all half-lives
-        // off the bitmap.
+        // off the bitmap. Isotopes are pre-baked into Unicode super-digits
+        // (²³⁸U) and embedded as literal markdown text — the math grammar's
+        // ^{N} path needs a base atom before it, which an isotope-prefix form
+        // (^{A}Sym) doesn't have, and the empty-group {}^{A} workaround isn't
+        // recognised either. Bold styling on the surrounding caption is what
+        // we get from the markdown pipeline here.
         var firstStep = _chain.Steps.FirstOrDefault(s => s.Parent.Z == _element.AtomicNumber);
         var legend = firstStep is null
-            ? $"  {_chain.Start} → … → {_chain.End} (stable)"
-            : $"  {firstStep.Parent} →{firstStep.Mode.Symbol()} {firstStep.Daughter}   t½ = {firstStep.HalfLife}";
-        WriteRow(2 + ChainPixelRows, legend, dimStyle, width);
+            ? $"  {IsotopeText(_chain.Start)} → … → {IsotopeText(_chain.End)} (stable)"
+            : $"  {IsotopeText(firstStep.Parent)} →{firstStep.Mode.Symbol()} {IsotopeText(firstStep.Daughter)}   t½ = {firstStep.HalfLife}";
+        WriteMarkdownRow(2 + ChainPixelRows, legend, width);
     }
+
+    /// <summary>Mass-number superscript + symbol, ready for direct insertion into markdown source.</summary>
+    private static string IsotopeText(Isotope iso)
+        => CL.Subscripts.Super(iso.A.ToString()) + iso.Symbol;
 
     private bool TryRenderSixel(int viewportCols)
     {
@@ -112,6 +123,13 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         }
 
         var r = _renderer;
+        // Opaque-black fill: every frame fully repaints the band so stale
+        // pixels from a previous (longer or differently-spaced) chain cannot
+        // ghost through. We previously used alpha=0 + P2=1 for byte-count
+        // savings, but Windows Terminal does not clear emitted Sixel pixels
+        // when the cell is overwritten with a text space — so transparent
+        // skips in the new frame leak the old frame's tiles. The WriteRow
+        // pre-paint above is now belt-and-suspenders.
         var bg = new RGBAColor32(0, 0, 0, 255);
         var fg = new RGBAColor32(230, 230, 230, 255);
         var dim = new RGBAColor32(160, 160, 160, 255);
@@ -368,22 +386,26 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         Viewport.Write($"{style.Apply(mode)}{visible}{pad}{CL.VtStyle.Reset}");
     }
 
+    /// <summary>
+    /// Renders one row of markdown source (paragraph or thematic break) into
+    /// the given panel-local row. Takes the first wrapped line out of
+    /// <see cref="CL.MarkdownRenderer.RenderLines"/> and pads to width using
+    /// <see cref="CL.MarkdownRenderer.VisibleLength"/> so embedded SGR codes
+    /// don't get counted against the visible column budget.
+    /// </summary>
+    private void WriteMarkdownRow(int row, string markdownSrc, int width)
+    {
+        if (!TrySetCursorPosition(Viewport, 0, row)) return;
+        var lines = CL.MarkdownRenderer.RenderLines(markdownSrc, width, Viewport.ColorMode);
+        var line = lines.Count > 0 ? lines[0] : "";
+        int visible = CL.MarkdownRenderer.VisibleLength(line);
+        var pad = visible < width ? new string(' ', width - visible) : "";
+        Viewport.Write($"{line}{pad}{CL.VtStyle.Reset}");
+    }
+
     public void Dispose()
     {
         _renderer?.Dispose();
         _renderer = null;
-    }
-
-    public static string? FindSystemFont()
-    {
-        string[] candidates = OperatingSystem.IsWindows()
-            ? [@"C:\Windows\Fonts\consola.ttf", @"C:\Windows\Fonts\cour.ttf", @"C:\Windows\Fonts\arial.ttf"]
-            : OperatingSystem.IsMacOS()
-            ? ["/System/Library/Fonts/Menlo.ttc", "/Library/Fonts/Arial.ttf"]
-            : ["/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-               "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf"];
-        foreach (var p in candidates)
-            if (File.Exists(p)) return p;
-        return null;
     }
 }

@@ -1,4 +1,3 @@
-using PeriodicTable.Tui.Soft;
 using CL = global::Console.Lib;
 
 namespace PeriodicTable.Tui;
@@ -6,65 +5,57 @@ namespace PeriodicTable.Tui;
 /// <summary>
 /// Multi-row detail card for the currently-selected element. Always renders
 /// the four lines [name + Z], [symbol + group/period/block], [atomic weight],
-/// [electron configuration].
+/// [electron configuration]. The body is a small Markdown document fed to a
+/// nested <see cref="CL.MarkdownWidget"/>, so the electron-config row is
+/// rendered through the LaTeX inline-math path (<c>\(1s^{2}\,2s^{2}\,…\)</c>)
+/// rather than via bespoke Unicode-superscript baking.
 /// </summary>
 public sealed class DetailPanel : CL.Widget
 {
     public const int Rows = 5;
 
+    private readonly CL.MarkdownWidget _md;
     private Element _element = Elements.ByAtomicNumber[1];
 
-    public DetailPanel(CL.ITerminalViewport viewport) : base(viewport) { }
-
-    public void SetElement(Element e) => _element = e;
-
-    public override void Render()
+    public DetailPanel(CL.ITerminalViewport viewport) : base(viewport)
     {
-        var mode = Viewport.ColorMode;
-        int width = Viewport.Size.Width;
-        if (width <= 0) return;
+        _md = new CL.MarkdownWidget(viewport).Markdown(BuildMarkdown(_element));
+    }
 
-        var dim = new CL.VtStyle(CL.SgrColor.BrightBlack, CL.SgrColor.Black);
-        var label = new CL.VtStyle(CL.SgrColor.BrightWhite, CL.SgrColor.Black);
-        var value = new CL.VtStyle(CL.SgrColor.BrightYellow, CL.SgrColor.Black);
+    public void SetElement(Element e)
+    {
+        _element = e;
+        _md.Markdown(BuildMarkdown(e));
+    }
 
-        // Top divider line.
-        if (TrySetCursorPosition(Viewport, 0, 0))
-            Viewport.Write(new string('\u2500', width));
+    public override void Render() => _md.Render();
 
-        Write(1, $"{_element.Name}", label, $" #{_element.AtomicNumber}", dim);
-
-        var grp = _element.Group?.ToString() ?? "—";
-        var bandText = _element.Category switch
+    /// <summary>
+    /// Builds the 5-block markdown body. Layout (one output row per block):
+    /// thematic-break divider, name + Z, symbol + group/period/block, atomic
+    /// weight, electron config (LaTeX inline math).
+    /// </summary>
+    internal static string BuildMarkdown(Element e)
+    {
+        var grp = e.Group?.ToString() ?? "—";
+        var band = e.Category switch
         {
             Category.Lanthanide => "Lanthanide",
             Category.Actinide => "Actinide",
             _ => "",
         };
-        Write(2, $"  {_element.Symbol}", value,
-                  $"   group {grp,-3} period {_element.Period}  block {_element.Block.ToString().ToLowerInvariant()}  {bandText}",
-                  dim);
+        var weight = e.IsSynthetic
+            ? $"({(int)System.Math.Round(e.AtomicWeight)})"
+            : e.AtomicWeight.ToString("F4");
+        var config = ElectronConfig.ExpandLatex(e);
+        var block = e.Block.ToString().ToLowerInvariant();
+        var bandSuffix = band.Length > 0 ? $"   {band}" : "";
 
-        var weight = _element.IsSynthetic
-            ? $"({(int)Math.Round(_element.AtomicWeight)})"
-            : _element.AtomicWeight.ToString("F4");
-        Write(3, "  atomic weight: ", dim, weight, value);
-
-        // Detail panel shows the expanded ("non-shorthand") configuration so
-        // the full shell structure is visible. The orbital panel on the right
-        // shows the noble-gas shorthand for the compact view.
-        Write(4, "  config: ", dim, ElectronConfig.Expand(_element), value);
-    }
-
-    private void Write(int row, string left, CL.VtStyle leftStyle, string right, CL.VtStyle rightStyle)
-    {
-        if (!TrySetCursorPosition(Viewport, 0, row)) return;
-        var mode = Viewport.ColorMode;
-        int used = left.Length + right.Length;
-        int width = Viewport.Size.Width;
-        var pad = used >= width ? "" : new string(' ', width - used);
-        Viewport.Write(
-            $"{leftStyle.Apply(mode)}{left}" +
-            $"{rightStyle.Apply(mode)}{right}{pad}{CL.VtStyle.Reset}");
+        return string.Join("\n\n",
+            "---",
+            $"**{e.Name}** *#{e.AtomicNumber}*",
+            $"**{e.Symbol}**   group {grp}   period {e.Period}   block {block}{bandSuffix}",
+            $"atomic weight: {weight}",
+            $"""config: \({config}\)""");
     }
 }

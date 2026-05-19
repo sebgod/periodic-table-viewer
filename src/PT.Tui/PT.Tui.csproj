@@ -15,6 +15,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PT\PT.csproj" />
-    <PackageReference Include="Console.Lib" Version="2.4.371" />
+    <PackageReference Include="Console.Lib" Version="2.12.731" />
   </ItemGroup>
 </Project>
