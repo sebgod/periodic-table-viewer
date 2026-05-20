@@ -25,12 +25,38 @@ namespace PeriodicTable.Tui.Soft;
 /// </summary>
 public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
 {
-    public const int Rows = 5;
+    /// <summary>
+    /// Compact layout: divider + caption + 2-row image strip + single-row
+    /// Unicode legend. The historical row budget; used when the terminal
+    /// can't spare the extra height for the math legend.
+    /// </summary>
+    public const int RowsCompact = 5;
+
+    /// <summary>
+    /// Expanded layout: divider + caption + 2-row image strip + 1-row caption
+    /// ("α decay, t½ = …") + blank + multi-row <c>$$\ce{…}$$</c> display-math
+    /// block. Sized for a Sextant rendering of a two-isotope decay step at
+    /// 12pt — typically ~8 rows tall — plus the surrounding chrome.
+    /// </summary>
+    public const int RowsExpanded = 14;
+
+    /// <summary>
+    /// Minimum legend height (in cell rows) required before the math legend
+    /// kicks in. Below this, <see cref="Render"/> falls back to the single-row
+    /// text legend even if a math mode was supplied — protects against narrow
+    /// resize windows where the panel got allocated too few rows.
+    /// </summary>
+    private const int MathLegendMinRows = 6;
+
     private const int ChainPixelRows = 2;
 
     private readonly string? _fontPath;
+    private readonly CL.BoxRenderMode? _legendMathMode;
     private CL.SixelRgbaImageRenderer? _renderer;
     private (int Width, int Height) _surfacePx;
+    private CL.MarkdownWidget? _legendMd;
+    private CL.TerminalViewport? _legendVp;
+    private (int Top, int Width, int Height) _legendVpDims;
 
     private Element _element = Elements.ByAtomicNumber[1];
     private DecayChain? _chain;
@@ -40,10 +66,19 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
     // both the Sixel tiles and the text-fallback tokens. Cleared each frame.
     private readonly List<(int Left, int Top, int Width, int Height, Isotope Iso)> _hits = [];
 
-    public SixelDecayChainPanel(CL.ITerminalViewport viewport, string? fontPath)
+    /// <param name="legendMathMode">
+    /// When non-null AND a math font is available AND the allocated viewport is
+    /// tall enough (<see cref="MathLegendMinRows"/> rows below the image), the
+    /// bottom legend is rendered as a <c>$$\ce{…}$$</c> display-math block via
+    /// a nested <see cref="CL.MarkdownWidget"/>. Otherwise the legend stays on
+    /// the single-row Unicode path.
+    /// </param>
+    public SixelDecayChainPanel(CL.ITerminalViewport viewport, string? fontPath,
+        CL.BoxRenderMode? legendMathMode = null)
         : base(viewport)
     {
         _fontPath = fontPath;
+        _legendMathMode = legendMathMode;
     }
 
     public void SetElement(Element e)
@@ -77,28 +112,114 @@ public sealed class SixelDecayChainPanel : CL.Widget, IDisposable
         for (int r = 2; r < 2 + ChainPixelRows; r++)
             WriteRow(r, "", dimStyle, width);
 
+        int legendTop = 2 + ChainPixelRows;
+        int legendHeight = Viewport.Size.Height - legendTop;
+
         if (_chain is null)
         {
-            WriteRow(2 + ChainPixelRows, "  Stable — see top detail panel", dimStyle, width);
+            WriteRow(legendTop, "  Stable — see top detail panel", dimStyle, width);
+            // Blank any trailing rows the expanded layout reserved.
+            for (int r = legendTop + 1; r < Viewport.Size.Height; r++)
+                WriteRow(r, "", dimStyle, width);
             return;
         }
 
         bool sixelOk = _fontPath is not null && TryRenderSixel(width);
         if (!sixelOk) RenderTextFallback(width);
 
-        // Last row: legend showing the relevant decay step from the selected
-        // isotope. Useful when there are too many steps to read all half-lives
-        // off the bitmap. Isotopes are pre-baked into Unicode super-digits
-        // (²³⁸U) and embedded as literal markdown text — the math grammar's
-        // ^{N} path needs a base atom before it, which an isotope-prefix form
-        // (^{A}Sym) doesn't have, and the empty-group {}^{A} workaround isn't
-        // recognised either. Bold styling on the surrounding caption is what
-        // we get from the markdown pipeline here.
-        var firstStep = _chain.Steps.FirstOrDefault(s => s.Parent.Z == _element.AtomicNumber);
-        var legend = firstStep is null
-            ? $"  {IsotopeText(_chain.Start)} → … → {IsotopeText(_chain.End)} (stable)"
-            : $"  {IsotopeText(firstStep.Parent)} →{firstStep.Mode.Symbol()} {IsotopeText(firstStep.Daughter)}   t½ = {firstStep.HalfLife}";
-        WriteMarkdownRow(2 + ChainPixelRows, legend, width);
+        // Bottom legend. mhchem-based display-math version when the caller
+        // asked for it AND we have room AND there's a decay step from the
+        // selected isotope to render. Falls back to the single-row Unicode
+        // legend otherwise (stable-decay-chain selections; narrow terminals;
+        // no math font; no math mode requested).
+        //
+        // Step lookup: first try a Parent.Z match against the chain's curated
+        // steps. If that misses (Am, Pu — they map into a chain but aren't
+        // linear-chain parents themselves), fall back to the per-element
+        // canonical decay so the legend still shows a real equation.
+        DecayStep? firstStep = _chain.Steps.FirstOrDefault(s => s.Parent.Z == _element.AtomicNumber);
+        if (firstStep is null
+            && DecayChains.CanonicalDecay.TryGetValue(_element.Symbol, out var feeder))
+        {
+            firstStep = feeder;
+        }
+        bool wantMath = _legendMathMode is not null
+            && _fontPath is not null
+            && legendHeight >= MathLegendMinRows
+            && firstStep is not null;
+
+        if (wantMath)
+        {
+            RenderMathLegend(legendTop, legendHeight, width, firstStep!);
+        }
+        else
+        {
+            // Constraint-space mode: heading text + formula together on one
+            // row. Mirrors the structure of the expanded legend (decay-mode
+            // caption then formula) but compressed inline so the user still
+            // sees the half-life next to the equation when vertical space
+            // doesn't allow the pixel-rendered block.
+            var legend = firstStep is null
+                ? $"  {IsotopeText(_chain.Start)} → … → {IsotopeText(_chain.End)} (stable)"
+                : $"  {firstStep.Mode.Symbol()} decay,  t½ = {firstStep.HalfLife}  —  {IsotopeText(firstStep.Parent)} → {IsotopeText(firstStep.Daughter)}";
+            WriteMarkdownRow(legendTop, legend, width);
+            // Blank any rows the expanded layout reserved beyond the single
+            // text legend row so old math residue doesn't ghost through after
+            // a mode-mismatch resize.
+            for (int r = legendTop + 1; r < Viewport.Size.Height; r++)
+                WriteRow(r, "", dimStyle, width);
+        }
+    }
+
+    /// <summary>
+    /// Renders the bottom legend as a captioned mhchem display-math block via
+    /// a nested <see cref="CL.MarkdownWidget"/> anchored at <paramref name="top"/>
+    /// of this panel's viewport. The widget owns the row-by-row writes inside
+    /// the legend rect; we just pin it to the right sub-viewport and re-feed
+    /// the markdown source when the element changes.
+    /// </summary>
+    private void RenderMathLegend(int top, int height, int width, DecayStep step)
+    {
+        // Recreate the sub-viewport + widget when geometry changes (resize,
+        // or first frame). The widget caches rendered lines internally, so
+        // we want to reuse it when geometry is stable to keep the cache warm.
+        if (_legendVp is null || _legendVpDims != (top, width, height) || _legendMd is null)
+        {
+            _legendVp = new CL.TerminalViewport(Viewport, 0, top, width, height);
+            _legendVpDims = (top, width, height);
+            _legendMd = new CL.MarkdownWidget(_legendVp)
+            {
+                MathMode = _legendMathMode,
+                MathFontPath = _fontPath,
+            };
+        }
+        _legendMd.Markdown(BuildMathLegendMarkdown(step));
+        _legendMd.Render();
+    }
+
+    /// <summary>
+    /// Markdown source for the math legend: one short caption line giving the
+    /// decay mode + half-life (the math grammar has no native arrow-label or
+    /// unit-text support, so these stay as plain text), then a <c>$$ … $$</c>
+    /// fence with the parent-arrow-daughter isotope notation. Mhchem's
+    /// prefix-script path (<c>\null^{A}_{Z}Sym</c>) renders the mass + atomic
+    /// numbers as a stacked super/subscript pair on the left of the symbol,
+    /// matching chemistry convention.
+    /// <para>
+    /// The fence delimiters live on their own lines so the block grammar opens
+    /// an <c>MdMathBlock</c> rather than parsing <c>$$body$$</c> as an inline
+    /// math span — inline math is fixed to single-row Unicode regardless of
+    /// the renderer's pixel mode, which is why the screen showed a Unicode
+    /// fallback before the delimiters were broken out.
+    /// </para>
+    /// </summary>
+    private static string BuildMathLegendMarkdown(DecayStep step)
+    {
+        var parent = $"^{{{step.Parent.A}}}_{{{step.Parent.Z}}}{step.Parent.Symbol}";
+        var daughter = $"^{{{step.Daughter.A}}}_{{{step.Daughter.Z}}}{step.Daughter.Symbol}";
+        return string.Join("\n\n",
+            $"  {step.Mode.Symbol()} decay,  t½ = {step.HalfLife}",
+            $"$$\n\\ce{{{parent} -> {daughter}}}\n$$");
     }
 
     /// <summary>Mass-number superscript + symbol, ready for direct insertion into markdown source.</summary>

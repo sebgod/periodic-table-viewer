@@ -36,20 +36,43 @@ internal static class Program
         var status = new CL.TextBar(panel.Dock(DockStyle.Bottom, 1))
             .Style(new CL.VtStyle(CL.SgrColor.BrightWhite, CL.SgrColor.BrightBlack));
 
-        // Decay chain panel sits between detail panel and the periodic table.
-        // Drawn even when the selected element is stable (caption explains).
-        // Sixel rendering is opt-in: requires both terminal capability and a
-        // resolvable system font; otherwise the panel falls back to a
-        // text-only chain on a single line.
-        // FontResolver returns "" when no candidate is found; the panels expect
-        // null for that "Sixel disabled" branch, so map empty -> null here.
+        // Resolve a system font for the Sixel-rendered chain image and the
+        // pixel-mode markdown math blocks. FontResolver returns "" when no
+        // candidate is found; the downstream panels expect null for that
+        // "pixel mode disabled" branch, so map empty -> null here.
         var resolved = term.HasSixelSupport ? FontResolver.ResolveSystemFont() : "";
         string? fontPath = resolved.Length > 0 ? resolved : null;
-        var chainPanel = new SixelDecayChainPanel(
-            panel.Dock(DockStyle.Bottom, SixelDecayChainPanel.Rows),
-            fontPath);
 
-        var detail = new DetailPanel(panel.Dock(DockStyle.Bottom, DetailPanel.Rows));
+        // Decide which panels can afford their expanded layout based on the
+        // terminal's vertical room. The detail panel's pixel-rendered electron-
+        // config block adds ~11 rows over its compact text legend; the chain
+        // panel's $$\ce{…}$$ legend adds ~9 rows. Both opt in independently —
+        // detail first (more often useful), then chain on top of that — and
+        // we only commit to an expanded layout when the periodic table can
+        // still meet its natural 28-row footprint after the panels carve out
+        // their rows. Decision is fixed at startup, mirroring OrbitalPanel.
+        const int TableMinRows = 28;
+        int chromeRows = 1 /*header*/ + 1 /*status*/;
+        bool wantDetailMath = fontPath is not null
+            && term.Size.Height >= chromeRows + DetailPanel.RowsExpanded + SixelDecayChainPanel.RowsCompact + TableMinRows;
+        int detailRows = wantDetailMath ? DetailPanel.RowsExpanded : DetailPanel.RowsCompact;
+        var detailMathMode = wantDetailMath ? CL.BoxRenderMode.Sextant : (CL.BoxRenderMode?)null;
+
+        bool wantChainMath = wantDetailMath
+            && term.Size.Height >= chromeRows + detailRows + SixelDecayChainPanel.RowsExpanded + TableMinRows;
+        int chainRows = wantChainMath
+            ? SixelDecayChainPanel.RowsExpanded
+            : SixelDecayChainPanel.RowsCompact;
+        var chainMathMode = wantChainMath ? CL.BoxRenderMode.Sextant : (CL.BoxRenderMode?)null;
+
+        var chainPanel = new SixelDecayChainPanel(
+            panel.Dock(DockStyle.Bottom, chainRows),
+            fontPath,
+            chainMathMode);
+
+        var detail = new DetailPanel(
+            panel.Dock(DockStyle.Bottom, detailRows),
+            detailMathMode, fontPath);
 
         // Orbital panel: docks on the right when the terminal is wide enough
         // at startup. The check uses the root viewport's initial size — once

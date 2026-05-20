@@ -49,6 +49,19 @@ public static class DecayChains
 
     public static readonly IReadOnlyList<DecayChain> All;
 
+    /// <summary>
+    /// Canonical first-decay step for elements that <see cref="ForElement"/>
+    /// maps into a chain but whose isotope doesn't appear as a parent in the
+    /// chain's linear <c>Steps</c> list. The actinide source nuclides Am-241
+    /// and Pu-238 are the practical examples — Am-241 α-decays into the head
+    /// of the Neptunium series (Np-237), and Pu-238 α-decays into U-234 mid-
+    /// way through the Uranium series. The decay-chain panel falls back to
+    /// these when its Parent.Z = selected.Z lookup misses, so the math legend
+    /// (and its compact text equivalent) can still show a real decay equation
+    /// instead of the "(stable)" terminus placeholder.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, DecayStep> CanonicalDecay;
+
     static DecayChains()
     {
         Uranium = BuildUranium();
@@ -56,6 +69,20 @@ public static class DecayChains
         Thorium = BuildThorium();
         Neptunium = BuildNeptunium();
         All = [Uranium, Actinium, Thorium, Neptunium];
+
+        CanonicalDecay = new Dictionary<string, DecayStep>(StringComparer.Ordinal)
+        {
+            // Pu-238 (α, 87.7 yr) → U-234 — joins the Uranium series mid-
+            // stream. The 4n+2 family includes Pu-238 (238 mod 4 = 2), but
+            // the canonical "Uranium series" is named after its U-238 head,
+            // so Pu-238 lives outside the curated linear chain.
+            ["Pu"] = new DecayStep(new Isotope(94, 238), new Isotope(92, 234), DecayMode.Alpha, "87.7 yr"),
+            // Am-241 (α, 432.2 yr) → Np-237 — the canonical actinide-source
+            // step that feeds the Neptunium series at its head (the chain
+            // proper starts at Np-237 since Np is the heaviest naturally-
+            // occurring element with a curated long-lived isotope here).
+            ["Am"] = new DecayStep(new Isotope(95, 241), new Isotope(93, 237), DecayMode.Alpha, "432 yr"),
+        };
     }
 
     /// <summary>

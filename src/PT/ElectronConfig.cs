@@ -37,6 +37,45 @@ public static class ElectronConfig
         => ToLatex(Expand(e));
 
     /// <summary>
+    /// LaTeX form of the raw <see cref="Element.ElectronConfiguration"/> — the
+    /// noble-gas-shorthand form for elements that have a stored prefix (e.g.
+    /// <c>[Rn]\,5f^{14}\,6d^{10}\,7s^{2}\,7p^{6}</c> for Og), or the full form
+    /// otherwise. Use this for display math (<c>$$…$$</c>) where the compact
+    /// shorthand fits in a pixel-rendered block better than the multi-shell
+    /// expansion.
+    /// </summary>
+    public static string ShorthandLatex(Element e)
+        => ToLatex(e.ElectronConfiguration);
+
+    /// <summary>
+    /// Splits the raw <see cref="Element.ElectronConfiguration"/> into the
+    /// noble-gas prefix (e.g. <c>"[Rn]"</c>, or <c>""</c> for light elements
+    /// stored without shorthand) and the LaTeX form of the outer-shell
+    /// remainder (e.g. <c>"6d^{2}\,7s^{2}"</c>). Renderers that target the
+    /// display-math pixel path want this split because the LALR.CC math
+    /// grammar bails on literal <c>[…]</c> brackets in the source — a single
+    /// pass through <see cref="ShorthandLatex"/> would silently fall back to
+    /// the single-row Unicode renderer for every shorthand element. Keep the
+    /// prefix as plain markdown text and put only the outer shells inside
+    /// the <c>$$…$$</c> fence.
+    /// </summary>
+    public static (string Prefix, string OuterLatex) SplitShorthandLatex(Element e)
+    {
+        var s = e.ElectronConfiguration;
+        if (s.Length > 0 && s[0] == '[')
+        {
+            int close = s.IndexOf(']');
+            if (close > 0)
+            {
+                var prefix = s[..(close + 1)];
+                var rest = s[(close + 1)..].TrimStart();
+                return (prefix, ToLatex(rest));
+            }
+        }
+        return ("", ToLatex(s));
+    }
+
+    /// <summary>
     /// Converts a Unicode-superscript electron-config string (e.g. <c>"1s² 2s² 2p⁶"</c>)
     /// into LaTeX inline-math source (<c>"1s^{2}\,2s^{2}\,2p^{6}"</c>). Plain
     /// spaces between subshell tokens become <c>\,</c>; runs of Unicode

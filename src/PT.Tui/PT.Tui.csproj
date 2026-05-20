@@ -26,6 +26,6 @@
     <ProjectReference Include="..\..\..\..\sharpastro\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
-    <PackageReference Include="Console.Lib" Version="2.12.731" />
+    <PackageReference Include="Console.Lib" Version="2.16.811" />
   </ItemGroup>
 </Project>
