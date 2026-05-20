@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build / run
 
-Solution: `periodic-table-viewer.slnx`. Library `PT` targets `net10.0`; the TUI targets `net10.0-windows`, AOT-published in Release.
+Solution: `periodic-table-viewer.slnx`. All three projects target `net10.0`; the TUI is AOT-published in Release across win/linux/macOS RIDs.
 
 ```bash
 dotnet build src/PT.Tui/PT.Tui.csproj -c Debug          # TUI
@@ -20,7 +20,7 @@ Three projects, layered:
 
 - **`src/PT`** — library (`PeriodicTable` namespace), pure managed, AOT-compatible. `Element` record + `Elements` static frozen-dictionary table covering all 118 elements (Z, symbol, name, group, period, block, category, atomic weight, electron config). `Layout` maps elements to (col, row) on the standard wide-form periodic-table grid. `Subscripts` provides char-level Unicode super/subscript helpers (no Console.Lib dep — usable from anywhere).
 - **`src/PT.Tui`** — `pt-tui` exe. Renders the table via `Console.Lib`. Entry point in `Program.cs`; the table itself is `PeriodicTableWidget`; the bottom card is `DetailPanel`. Soft-rendered text prototype lives under `Soft/` (see below).
-- **`src/PT.Tests`** — xUnit.v3 + Shouldly. `net10.0` (no -windows) so it runs on Linux CI. Covers element-data invariants, layout positioning, and Unicode subscript mappings.
+- **`src/PT.Tests`** — xUnit.v3 + Shouldly. Covers element-data invariants, layout positioning, and Unicode subscript mappings.
 
 ### Element data provenance
 
