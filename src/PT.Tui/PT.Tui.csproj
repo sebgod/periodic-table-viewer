@@ -17,6 +17,11 @@
     <ProjectReference Include="..\PT\PT.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- PeriodicTableWidget.BuildTree is internal; the layout parity tests exercise it. -->
+    <InternalsVisibleTo Include="PT.Tests" />
+  </ItemGroup>
+
   <!-- Console.Lib + transitive DIR.Lib: sibling-repo trick. When both
        SharpAstro working copies exist next to this repo, build against
        them via ProjectReference so changes to either are picked up

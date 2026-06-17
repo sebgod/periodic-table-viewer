@@ -1,28 +1,42 @@
+using System.Collections.Immutable;
 using Console.Lib;
+using DIR.Lib;
 using CL = global::Console.Lib;
 
 namespace PeriodicTable.Tui;
 
 /// <summary>
-/// Wide-form periodic table rendered as an 18×9 grid of 4×3 cells (72×28
+/// Wide-form periodic table rendered as an 18x9 grid of 5x3 cells (90x28
 /// terminal cells including the gap between the main grid and the f-block).
 /// Owns the selection cursor; arrow keys move to the next non-blank cell in
 /// each direction, jumping into / out of the f-block as appropriate.
+///
+/// The table is built as a declarative <see cref="LayoutNode"/> tree (a vertical
+/// stack of two 18-column <see cref="LayoutNode.Grid"/>s with a gap row between)
+/// and painted via the surface-agnostic <see cref="CL.CellLayout"/> cell painter.
+/// Click hit-testing reuses the SAME arranged tree (<see cref="CL.CellLayout.HitTest"/>),
+/// so the drawn cell rect IS the hit region -- no separate forward/inverse cell
+/// arithmetic that can drift. Keyboard navigation still works on the logical
+/// (col,row) grid via <see cref="Layout"/>.
 /// </summary>
 public sealed class PeriodicTableWidget : CL.Widget
 {
-    // 5 cols × 3 rows per element cell. Mass strings render to 4 chars; the
+    // 5 cols x 3 rows per element cell. Mass strings render to 4 chars; the
     // 5th column gives one cell of horizontal padding so adjacent cells'
-    // numbers don't run together (e.g. "39.140.145.0..." → "39.1 40.1 45.0").
+    // numbers don't run together (e.g. "39.140.145.0..." -> "39.1 40.1 45.0").
     public const int CellWidth = 5;
     public const int CellHeight = 3;
     public const int FBlockGap = 1;
 
-    public const int RenderedWidth = Layout.Columns * CellWidth;                         // 72
-    public const int RenderedHeight = Layout.TotalRows * CellHeight + FBlockGap;         // 28
+    public const int RenderedWidth = Layout.Columns * CellWidth;                         // 90
+    public const int RenderedHeight = Layout.TotalRows * CellHeight + FBlockGap;          // 28
+
+    private static readonly CL.CellMeasureContext MeasureCtx = new();
 
     private Element _selected;
-    private (int Col, int Row) _origin;
+
+    /// <summary>Last arranged tree from <see cref="Render"/>, reused for click hit-testing.</summary>
+    private ImmutableArray<ArrangedNode<int>> _arranged = ImmutableArray<ArrangedNode<int>>.Empty;
 
     public PeriodicTableWidget(CL.ITerminalViewport viewport)
         : base(viewport)
@@ -37,90 +51,139 @@ public sealed class PeriodicTableWidget : CL.Widget
 
     public override void Render()
     {
-        var mode = Viewport.ColorMode;
-
         // Center within the viewport when there's slack on either axis.
         int extraW = Math.Max(0, Viewport.Size.Width - RenderedWidth);
         int extraH = Math.Max(0, Viewport.Size.Height - RenderedHeight);
-        _origin = (extraW / 2, extraH / 2);
+        var bounds = new Rect<int>(extraW / 2, extraH / 2, RenderedWidth, RenderedHeight);
 
-        // No pre-clear pass: every cell writes its full background + content,
-        // so the previous frame's content is always overwritten in place. A
-        // separate clear pass produced a visible blank flash on selection
-        // changes (cells go to spaces, then back to content one-by-one).
-        // The only blank cells in the rendered area (period 1 cols 2–17,
-        // periods 2–3 cols 3–12, the f-block gap row, the placeholder margins
-        // around the lanthanide/actinide rows) are blanked on the very first
-        // render by VirtualTerminal.Clear() / EnterAlternateScreen and never
-        // re-rendered, so they stay clean.
+        _arranged = LayoutEngine.Arrange(BuildTree(_selected), bounds, MeasureCtx);
 
-        // F-block placeholders ("57–71" / "89–103") at column 3, periods 6/7.
-        var ph6 = ToTerminal(3, 6);
-        var ph7 = ToTerminal(3, 7);
-        RenderFBlockPlaceholder(ph6.Col, ph6.Row, "57", "71", mode);
-        RenderFBlockPlaceholder(ph7.Col, ph7.Row, "89", "103", mode);
+        // No pre-clear pass: every element/placeholder cell paints its full
+        // background + glyphs, overwriting the previous frame in place (a separate
+        // clear pass produced a visible blank flash on selection changes). Blank
+        // cells are transparent Box leaves, so the painter draws nothing for them
+        // -- they stay clean from the initial VirtualTerminal.Clear() /
+        // EnterAlternateScreen and are never re-rendered.
+        CL.CellLayout.Paint(Viewport, _arranged);
+    }
 
-        // Element cells (main grid + f-block rows). Selection cursor is
-        // expressed via reverse-video styling on the cell (see RenderElement).
+    // -----------------------------------------------------------------------
+    // Tree construction
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Builds the periodic-table layout tree for a given selection. Static + viewport-free so it is unit
+    /// testable: a test can <see cref="LayoutEngine.Arrange{T}"/> the result and assert element cell rects +
+    /// <see cref="CL.CellLayout.HitTest"/> mappings without standing up a terminal.
+    /// </summary>
+    internal static LayoutNode BuildTree(Element selected)
+    {
+        var main = new LayoutNode[Layout.Columns * Layout.MainRows];
+        var fblock = new LayoutNode[Layout.Columns * 2];
+        for (var i = 0; i < main.Length; i++) main[i] = BlankCell();
+        for (var i = 0; i < fblock.Length; i++) fblock[i] = BlankCell();
+
+        // F-block placeholders ("*" + "57"/"71", "89"/"103") at column 3, periods 6/7.
+        main[CellIndex(3, 6)] = PlaceholderCell("57", "71");
+        main[CellIndex(3, 7)] = PlaceholderCell("89", "103");
+
+        // Place each element at its (col,row); the selection cursor is the
+        // reverse-video styling baked into the cell's colours.
         foreach (var e in Elements.All)
         {
-            var (g, p) = Layout.CellOf(e);
-            var (col, row) = ToTerminal(g, p);
-            RenderElement(col, row, e, isSelected: ReferenceEquals(e, _selected), mode);
+            var (col, row) = Layout.CellOf(e);
+            var cell = ElementCell(e, isSelected: ReferenceEquals(e, selected));
+            if (row <= Layout.MainRows)
+            {
+                main[(row - 1) * Layout.Columns + (col - 1)] = cell;
+            }
+            else
+            {
+                fblock[(row - Layout.FBlockRow1) * Layout.Columns + (col - 1)] = cell;
+            }
         }
-    }
 
-    private (int Col, int Row) ToTerminal(int gridCol, int gridRow)
-    {
-        int col = _origin.Col + (gridCol - 1) * CellWidth;
-        int row = _origin.Row + (gridRow - 1) * CellHeight;
-        if (gridRow >= Layout.FBlockRow1) row += FBlockGap;
-        return (col, row);
-    }
-
-    private void RenderElement(int col, int row, Element e, bool isSelected, CL.ColorMode mode)
-    {
-        var fg = CategoryFg(e.Category);
-        var bg = isSelected ? CL.SgrColor.White : CL.SgrColor.Black;
-        var fgEff = isSelected ? CL.SgrColor.Black : fg;
-        var style = new CL.VtStyle(fgEff, bg);
-
-        // Atomic-number style: dimmer for synthetic, brighter for selected.
-        var numStyle = isSelected
-            ? new CL.VtStyle(CL.SgrColor.Black, bg)
-            : new CL.VtStyle(e.IsSynthetic ? CL.SgrColor.BrightBlack : CL.SgrColor.BrightWhite, bg);
-
-        // Mass style: dim for synthetic to flag the parenthesised form.
-        var massStyle = isSelected
-            ? new CL.VtStyle(CL.SgrColor.Black, bg)
-            : new CL.VtStyle(e.IsSynthetic ? CL.SgrColor.BrightBlack : fg, bg);
-
-        var lines = new SoftLine[]
+        return new LayoutNode.Stack(
+        [
+            new LayoutNode.Grid(Layout.Columns, [.. main])
+            {
+                Width = Sizing.Star(),
+                Height = Sizing.Fixed(Layout.MainRows * CellHeight),
+            },
+            // One-cell gap separating the main grid from the f-block rows.
+            new LayoutNode.Leaf(new LayoutContent.Box(RenderedWidth, FBlockGap))
+            {
+                Width = Sizing.Star(),
+                Height = Sizing.Fixed(FBlockGap),
+            },
+            new LayoutNode.Grid(Layout.Columns, [.. fblock])
+            {
+                Width = Sizing.Star(),
+                Height = Sizing.Fixed(2 * CellHeight),
+            },
+        ], LayoutAxis.Vertical)
         {
-            // Row 0: atomic number, top-left.
-            new([new SoftSpan(e.AtomicNumber.ToString(), numStyle)], HAlign.Left),
-            // Row 1: symbol, centered, in category color.
-            new([new SoftSpan(e.Symbol, style)], HAlign.Center),
-            // Row 2: atomic mass, centered.
-            new([new SoftSpan(FormatMass(e), massStyle)], HAlign.Center),
+            Width = Sizing.Fixed(RenderedWidth),
+            Height = Sizing.Fixed(RenderedHeight),
+        };
+    }
+
+    private static int CellIndex(int col, int row) => (row - 1) * Layout.Columns + (col - 1);
+
+    private static LayoutNode ElementCell(Element e, bool isSelected)
+    {
+        var black = CL.SgrColor.Black.ToRgba();
+        var bg = isSelected ? CL.SgrColor.White.ToRgba() : black;
+        var categoryFg = CategoryFg(e.Category).ToRgba();
+
+        // Atomic-number: dimmer for synthetic, brighter otherwise; black when selected.
+        var numFg = isSelected ? black : (e.IsSynthetic ? CL.SgrColor.BrightBlack : CL.SgrColor.BrightWhite).ToRgba();
+        // Symbol: category colour. Mass: dim for synthetic (flags the integer form).
+        var symFg = isSelected ? black : categoryFg;
+        var massFg = isSelected ? black : (e.IsSynthetic ? CL.SgrColor.BrightBlack.ToRgba() : categoryFg);
+
+        return new LayoutNode.Stack(
+        [
+            CellLine(e.AtomicNumber.ToString(), numFg, TextAlign.Near),   // row 0: number, top-left
+            CellLine(e.Symbol, symFg, TextAlign.Center),                  // row 1: symbol, centered
+            CellLine(FormatMass(e), massFg, TextAlign.Center),            // row 2: mass, centered
+        ], LayoutAxis.Vertical)
+        {
+            Width = Sizing.Fixed(CellWidth),
+            Height = Sizing.Fixed(CellHeight),
+            Background = bg,
+            Hit = new HitResult.ListItemHit("Element", e.AtomicNumber),
+        };
+    }
+
+    private static LayoutNode PlaceholderCell(string from, string to)
+    {
+        var fg = CL.SgrColor.BrightBlack.ToRgba();
+        return new LayoutNode.Stack(
+        [
+            CellLine("*", fg, TextAlign.Center),
+            CellLine(from, fg, TextAlign.Center),
+            CellLine(to, fg, TextAlign.Center),
+        ], LayoutAxis.Vertical)
+        {
+            Width = Sizing.Fixed(CellWidth),
+            Height = Sizing.Fixed(CellHeight),
+            Background = CL.SgrColor.Black.ToRgba(),
+        };
+    }
+
+    // Star width so each line fills the cell and HAlign can center within it;
+    // Auto height resolves to one terminal row (the cell-measure oracle).
+    private static LayoutNode CellLine(string text, RGBAColor32 fg, TextAlign hAlign) =>
+        new LayoutNode.Leaf(new LayoutContent.Text(text) { Color = fg, HAlign = hAlign, VAlign = TextAlign.Center })
+        {
+            Width = Sizing.Star(),
+            Height = Sizing.Auto,
         };
 
-        var soft = new SoftText(CellWidth, CellHeight, lines);
-        SoftRenderer.Render(Viewport, col, row, soft, mode, background: new CL.VtStyle(fgEff, bg));
-    }
-
-    private void RenderFBlockPlaceholder(int col, int row, string from, string to, CL.ColorMode mode)
-    {
-        var style = new CL.VtStyle(CL.SgrColor.BrightBlack, CL.SgrColor.Black);
-        var lines = new SoftLine[]
-        {
-            new([new SoftSpan("*", style)], HAlign.Center),
-            new([new SoftSpan(from, style)], HAlign.Center),
-            new([new SoftSpan(to, style)], HAlign.Center),
-        };
-        var soft = new SoftText(CellWidth, CellHeight, lines);
-        SoftRenderer.Render(Viewport, col, row, soft, mode);
-    }
+    // Transparent spacer: the painter skips it (zero alpha), so blank grid cells
+    // are never drawn over -- preserving the no-flash, paint-in-place behaviour.
+    private static LayoutNode BlankCell() => new LayoutNode.Leaf(new LayoutContent.Box(CellWidth, CellHeight));
 
     private static string FormatMass(Element e)
     {
@@ -148,6 +211,10 @@ public sealed class PeriodicTableWidget : CL.Widget
         _ => CL.SgrColor.White,
     };
 
+    // -----------------------------------------------------------------------
+    // Input
+    // -----------------------------------------------------------------------
+
     public bool HandleKey(ConsoleKey key, ConsoleModifiers _)
     {
         switch (key)
@@ -169,10 +236,11 @@ public sealed class PeriodicTableWidget : CL.Widget
     public bool HandleMouse(CL.MouseEvent ev)
     {
         if (ev.IsRelease || ev.Button != 0) return false;
-        var hit = HitTest(ev.X, ev.Y);
-        if (hit is null) return false;
-        var (col, row) = hit.Value;
-        return ElementAtTerminal(col, row) is { } el && Select(el);
+        // Translate the click to viewport-local cells, then map it back to an
+        // element through the arranged tree's auto-bound hit regions.
+        if (HitTest(ev.X, ev.Y) is not { } local) return false;
+        return CL.CellLayout.HitTest(_arranged, local.Col, local.Row) is HitResult.ListItemHit { ListId: "Element", Index: var z }
+            && SelectByZ(z);
     }
 
     private bool Move(int dCol, int dRow)
@@ -182,7 +250,7 @@ public sealed class PeriodicTableWidget : CL.Widget
         for (int step = 0; step < Layout.Columns + Layout.TotalRows; step++)
         {
             gc += dCol; gr += dRow;
-            // Wrap moves on f-block gap: down from main row 7 → actinide row.
+            // Wrap moves on f-block gap: down from main row 7 -> actinide row.
             if (gr is < 1 or > Layout.TotalRows) return false;
             if (gc is < 1 or > Layout.Columns) return false;
             if (Layout.IsFBlockPlaceholder(gc, gr)) continue;
@@ -201,30 +269,6 @@ public sealed class PeriodicTableWidget : CL.Widget
             if (c == gridCol && r == gridRow) return e;
         }
         return null;
-    }
-
-    private Element? ElementAtTerminal(int col, int row)
-    {
-        col -= _origin.Col;
-        row -= _origin.Row;
-        if (col < 0 || row < 0) return null;
-        // Inverse of ToTerminal.
-        int gridCol = col / CellWidth + 1;
-        int rowOffset = row;
-        int gridRow;
-        if (rowOffset >= Layout.MainRows * CellHeight + FBlockGap)
-        {
-            int fRow = (rowOffset - Layout.MainRows * CellHeight - FBlockGap) / CellHeight;
-            gridRow = Layout.MainRows + 1 + fRow;
-        }
-        else
-        {
-            gridRow = rowOffset / CellHeight + 1;
-            if (gridRow > Layout.MainRows) return null; // in the gap
-        }
-        if (gridCol is < 1 or > Layout.Columns) return null;
-        if (gridRow is < 1 or > Layout.TotalRows) return null;
-        return FindAt(gridCol, gridRow);
     }
 
     private bool Select(Element e)
