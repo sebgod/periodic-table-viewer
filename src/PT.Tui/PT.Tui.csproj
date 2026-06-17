@@ -28,7 +28,7 @@
        without a NuGet bump. CI builds (and any clone without the siblings)
        fall through to the published PackageReference. -->
   <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
-    <ProjectReference Include="..\..\..\..\sharpastro\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
+    <ProjectReference Include="..\..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
     <PackageReference Include="Console.Lib" Version="2.16.811" />
