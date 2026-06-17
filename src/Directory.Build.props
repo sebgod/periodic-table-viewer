@@ -12,8 +12,8 @@
   -->
   <PropertyGroup>
     <UseLocalSiblings Condition="'$(UseLocalSiblings)' == ''
-      AND Exists('$(MSBuildThisFileDirectory)..\..\..\sharpastro\Console.Lib\src\Console.Lib\Console.Lib.csproj')
-      AND Exists('$(MSBuildThisFileDirectory)..\..\..\sharpastro\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj')">true</UseLocalSiblings>
+      AND Exists('$(MSBuildThisFileDirectory)..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj')
+      AND Exists('$(MSBuildThisFileDirectory)..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj')">true</UseLocalSiblings>
   </PropertyGroup>
 
 </Project>
