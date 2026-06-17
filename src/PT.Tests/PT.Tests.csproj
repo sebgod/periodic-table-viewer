@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PT\PT.csproj" />
+    <ProjectReference Include="..\PT.Tui\PT.Tui.csproj" />
   </ItemGroup>
 
   <!-- Same sibling-repo trick as PT.Tui.csproj — see src/Directory.Build.props. -->
