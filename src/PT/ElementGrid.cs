@@ -5,7 +5,7 @@ namespace PeriodicTable;
 /// table. Both axes are 1-based and follow the visible layout, not the
 /// underlying group/period numbers (which differ for the f-block).
 ///
-/// Layout: 18 columns × 9 rows total.
+/// ElementGrid: 18 columns × 9 rows total.
 ///   Rows 1–7  → main grid (periods 1–7).
 ///   Row 8     → lanthanide series (Z=57–71) at columns 3–17.
 ///   Row 9     → actinide series (Z=89–103) at columns 3–17.
@@ -15,7 +15,7 @@ namespace PeriodicTable;
 /// placeholders ("57–71" / "89–103") by the widget — there is no element
 /// at those grid positions.
 /// </summary>
-public static class Layout
+public static class ElementGrid
 {
     public const int Columns = 18;
     public const int MainRows = 7;

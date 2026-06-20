@@ -11,13 +11,13 @@ namespace PeriodicTable.Tui;
 /// Owns the selection cursor; arrow keys move to the next non-blank cell in
 /// each direction, jumping into / out of the f-block as appropriate.
 ///
-/// The table is built as a declarative <see cref="LayoutNode"/> tree (a vertical
-/// stack of two 18-column <see cref="LayoutNode.Grid"/>s with a gap row between)
+/// The table is built as a declarative <see cref="Layout.Node"/> tree (a vertical
+/// stack of two 18-column <see cref="Layout.Node.Grid"/>s with a gap row between)
 /// and painted via the surface-agnostic <see cref="CL.CellLayout"/> cell painter.
 /// Click hit-testing reuses the SAME arranged tree (<see cref="CL.CellLayout.HitTest"/>),
 /// so the drawn cell rect IS the hit region -- no separate forward/inverse cell
 /// arithmetic that can drift. Keyboard navigation still works on the logical
-/// (col,row) grid via <see cref="Layout"/>.
+/// (col,row) grid via <see cref="ElementGrid"/>.
 /// </summary>
 public sealed class PeriodicTableWidget : CL.Widget
 {
@@ -28,15 +28,15 @@ public sealed class PeriodicTableWidget : CL.Widget
     public const int CellHeight = 3;
     public const int FBlockGap = 1;
 
-    public const int RenderedWidth = Layout.Columns * CellWidth;                         // 90
-    public const int RenderedHeight = Layout.TotalRows * CellHeight + FBlockGap;          // 28
+    public const int RenderedWidth = ElementGrid.Columns * CellWidth;                         // 90
+    public const int RenderedHeight = ElementGrid.TotalRows * CellHeight + FBlockGap;          // 28
 
     private static readonly CL.CellMeasureContext MeasureCtx = new();
 
     private Element _selected;
 
     /// <summary>Last arranged tree from <see cref="Render"/>, reused for click hit-testing.</summary>
-    private ImmutableArray<ArrangedNode<int>> _arranged = ImmutableArray<ArrangedNode<int>>.Empty;
+    private ImmutableArray<Layout.ArrangedNode<int>> _arranged = ImmutableArray<Layout.ArrangedNode<int>>.Empty;
 
     public PeriodicTableWidget(CL.ITerminalViewport viewport)
         : base(viewport)
@@ -56,7 +56,7 @@ public sealed class PeriodicTableWidget : CL.Widget
         int extraH = Math.Max(0, Viewport.Size.Height - RenderedHeight);
         var bounds = new Rect<int>(extraW / 2, extraH / 2, RenderedWidth, RenderedHeight);
 
-        _arranged = LayoutEngine.Arrange(BuildTree(_selected), bounds, MeasureCtx);
+        _arranged = Layout.Engine.Arrange(BuildTree(_selected), bounds, MeasureCtx);
 
         // No pre-clear pass: every element/placeholder cell paints its full
         // background + glyphs, overwriting the previous frame in place (a separate
@@ -73,13 +73,13 @@ public sealed class PeriodicTableWidget : CL.Widget
 
     /// <summary>
     /// Builds the periodic-table layout tree for a given selection. Static + viewport-free so it is unit
-    /// testable: a test can <see cref="LayoutEngine.Arrange{T}"/> the result and assert element cell rects +
+    /// testable: a test can <see cref="Layout.Engine.Arrange{T}"/> the result and assert element cell rects +
     /// <see cref="CL.CellLayout.HitTest"/> mappings without standing up a terminal.
     /// </summary>
-    internal static LayoutNode BuildTree(Element selected)
+    internal static Layout.Node BuildTree(Element selected)
     {
-        var main = new LayoutNode[Layout.Columns * Layout.MainRows];
-        var fblock = new LayoutNode[Layout.Columns * 2];
+        var main = new Layout.Node[ElementGrid.Columns * ElementGrid.MainRows];
+        var fblock = new Layout.Node[ElementGrid.Columns * 2];
         for (var i = 0; i < main.Length; i++) main[i] = BlankCell();
         for (var i = 0; i < fblock.Length; i++) fblock[i] = BlankCell();
 
@@ -91,46 +91,46 @@ public sealed class PeriodicTableWidget : CL.Widget
         // reverse-video styling baked into the cell's colours.
         foreach (var e in Elements.All)
         {
-            var (col, row) = Layout.CellOf(e);
+            var (col, row) = ElementGrid.CellOf(e);
             var cell = ElementCell(e, isSelected: ReferenceEquals(e, selected));
-            if (row <= Layout.MainRows)
+            if (row <= ElementGrid.MainRows)
             {
-                main[(row - 1) * Layout.Columns + (col - 1)] = cell;
+                main[(row - 1) * ElementGrid.Columns + (col - 1)] = cell;
             }
             else
             {
-                fblock[(row - Layout.FBlockRow1) * Layout.Columns + (col - 1)] = cell;
+                fblock[(row - ElementGrid.FBlockRow1) * ElementGrid.Columns + (col - 1)] = cell;
             }
         }
 
-        return new LayoutNode.Stack(
+        return new Layout.Node.Stack(
         [
-            new LayoutNode.Grid(Layout.Columns, [.. main])
+            new Layout.Node.Grid(ElementGrid.Columns, [.. main])
             {
-                Width = Sizing.Star(),
-                Height = Sizing.Fixed(Layout.MainRows * CellHeight),
+                Width = Layout.Sizing.Star(),
+                Height = Layout.Sizing.Fixed(ElementGrid.MainRows * CellHeight),
             },
             // One-cell gap separating the main grid from the f-block rows.
-            new LayoutNode.Leaf(new LayoutContent.Box(RenderedWidth, FBlockGap))
+            new Layout.Node.Leaf(new Layout.Content.Box(RenderedWidth, FBlockGap))
             {
-                Width = Sizing.Star(),
-                Height = Sizing.Fixed(FBlockGap),
+                Width = Layout.Sizing.Star(),
+                Height = Layout.Sizing.Fixed(FBlockGap),
             },
-            new LayoutNode.Grid(Layout.Columns, [.. fblock])
+            new Layout.Node.Grid(ElementGrid.Columns, [.. fblock])
             {
-                Width = Sizing.Star(),
-                Height = Sizing.Fixed(2 * CellHeight),
+                Width = Layout.Sizing.Star(),
+                Height = Layout.Sizing.Fixed(2 * CellHeight),
             },
-        ], LayoutAxis.Vertical)
+        ], Layout.Axis.Vertical)
         {
-            Width = Sizing.Fixed(RenderedWidth),
-            Height = Sizing.Fixed(RenderedHeight),
+            Width = Layout.Sizing.Fixed(RenderedWidth),
+            Height = Layout.Sizing.Fixed(RenderedHeight),
         };
     }
 
-    private static int CellIndex(int col, int row) => (row - 1) * Layout.Columns + (col - 1);
+    private static int CellIndex(int col, int row) => (row - 1) * ElementGrid.Columns + (col - 1);
 
-    private static LayoutNode ElementCell(Element e, bool isSelected)
+    private static Layout.Node ElementCell(Element e, bool isSelected)
     {
         var black = CL.SgrColor.Black.ToRgba();
         var bg = isSelected ? CL.SgrColor.White.ToRgba() : black;
@@ -142,48 +142,48 @@ public sealed class PeriodicTableWidget : CL.Widget
         var symFg = isSelected ? black : categoryFg;
         var massFg = isSelected ? black : (e.IsSynthetic ? CL.SgrColor.BrightBlack.ToRgba() : categoryFg);
 
-        return new LayoutNode.Stack(
+        return new Layout.Node.Stack(
         [
             CellLine(e.AtomicNumber.ToString(), numFg, TextAlign.Near),   // row 0: number, top-left
             CellLine(e.Symbol, symFg, TextAlign.Center),                  // row 1: symbol, centered
             CellLine(FormatMass(e), massFg, TextAlign.Center),            // row 2: mass, centered
-        ], LayoutAxis.Vertical)
+        ], Layout.Axis.Vertical)
         {
-            Width = Sizing.Fixed(CellWidth),
-            Height = Sizing.Fixed(CellHeight),
+            Width = Layout.Sizing.Fixed(CellWidth),
+            Height = Layout.Sizing.Fixed(CellHeight),
             Background = bg,
             Hit = new HitResult.ListItemHit("Element", e.AtomicNumber),
         };
     }
 
-    private static LayoutNode PlaceholderCell(string from, string to)
+    private static Layout.Node PlaceholderCell(string from, string to)
     {
         var fg = CL.SgrColor.BrightBlack.ToRgba();
-        return new LayoutNode.Stack(
+        return new Layout.Node.Stack(
         [
             CellLine("*", fg, TextAlign.Center),
             CellLine(from, fg, TextAlign.Center),
             CellLine(to, fg, TextAlign.Center),
-        ], LayoutAxis.Vertical)
+        ], Layout.Axis.Vertical)
         {
-            Width = Sizing.Fixed(CellWidth),
-            Height = Sizing.Fixed(CellHeight),
+            Width = Layout.Sizing.Fixed(CellWidth),
+            Height = Layout.Sizing.Fixed(CellHeight),
             Background = CL.SgrColor.Black.ToRgba(),
         };
     }
 
     // Star width so each line fills the cell and HAlign can center within it;
     // Auto height resolves to one terminal row (the cell-measure oracle).
-    private static LayoutNode CellLine(string text, RGBAColor32 fg, TextAlign hAlign) =>
-        new LayoutNode.Leaf(new LayoutContent.Text(text) { Color = fg, HAlign = hAlign, VAlign = TextAlign.Center })
+    private static Layout.Node CellLine(string text, RGBAColor32 fg, TextAlign hAlign) =>
+        new Layout.Node.Leaf(new Layout.Content.Text(text) { Color = fg, HAlign = hAlign, VAlign = TextAlign.Center })
         {
-            Width = Sizing.Star(),
-            Height = Sizing.Auto,
+            Width = Layout.Sizing.Star(),
+            Height = Layout.Sizing.Auto,
         };
 
     // Transparent spacer: the painter skips it (zero alpha), so blank grid cells
     // are never drawn over -- preserving the no-flash, paint-in-place behaviour.
-    private static LayoutNode BlankCell() => new LayoutNode.Leaf(new LayoutContent.Box(CellWidth, CellHeight));
+    private static Layout.Node BlankCell() => new Layout.Node.Leaf(new Layout.Content.Box(CellWidth, CellHeight));
 
     private static string FormatMass(Element e)
     {
@@ -245,17 +245,17 @@ public sealed class PeriodicTableWidget : CL.Widget
 
     private bool Move(int dCol, int dRow)
     {
-        var (gc, gr) = Layout.CellOf(_selected);
+        var (gc, gr) = ElementGrid.CellOf(_selected);
         // Up to 20 steps to escape blank rows / jump across f-block gap.
-        for (int step = 0; step < Layout.Columns + Layout.TotalRows; step++)
+        for (int step = 0; step < ElementGrid.Columns + ElementGrid.TotalRows; step++)
         {
             gc += dCol; gr += dRow;
             // Wrap moves on f-block gap: down from main row 7 -> actinide row.
-            if (gr is < 1 or > Layout.TotalRows) return false;
-            if (gc is < 1 or > Layout.Columns) return false;
-            if (Layout.IsFBlockPlaceholder(gc, gr)) continue;
-            if (gr <= Layout.MainRows && Layout.IsBlankMainCell(gc, gr)) continue;
-            if (gr >= Layout.FBlockRow1 && (gc < 3 || gc > 17)) continue;
+            if (gr is < 1 or > ElementGrid.TotalRows) return false;
+            if (gc is < 1 or > ElementGrid.Columns) return false;
+            if (ElementGrid.IsFBlockPlaceholder(gc, gr)) continue;
+            if (gr <= ElementGrid.MainRows && ElementGrid.IsBlankMainCell(gc, gr)) continue;
+            if (gr >= ElementGrid.FBlockRow1 && (gc < 3 || gc > 17)) continue;
             if (FindAt(gc, gr) is { } el) return Select(el);
         }
         return false;
@@ -265,7 +265,7 @@ public sealed class PeriodicTableWidget : CL.Widget
     {
         foreach (var e in Elements.All)
         {
-            var (c, r) = Layout.CellOf(e);
+            var (c, r) = ElementGrid.CellOf(e);
             if (c == gridCol && r == gridRow) return e;
         }
         return null;

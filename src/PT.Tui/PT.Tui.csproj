@@ -22,6 +22,12 @@
     <InternalsVisibleTo Include="PT.Tests" />
   </ItemGroup>
 
+  <!-- Alias the DIR.Lib.Layout namespace so call sites read as the qualified Layout.Node / Layout.Builder
+       form (same convention as TianWen). The app's element-grid helper is `ElementGrid`, so `Layout` is free. -->
+  <ItemGroup>
+    <Using Include="DIR.Lib.Layout" Alias="Layout" />
+  </ItemGroup>
+
   <!-- Console.Lib + transitive DIR.Lib: sibling-repo trick. When both
        SharpAstro working copies exist next to this repo, build against
        them via ProjectReference so changes to either are picked up
@@ -31,6 +37,6 @@
     <ProjectReference Include="..\..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
-    <PackageReference Include="Console.Lib" Version="2.16.811" />
+    <PackageReference Include="Console.Lib" Version="3.3.*" />
   </ItemGroup>
 </Project>
