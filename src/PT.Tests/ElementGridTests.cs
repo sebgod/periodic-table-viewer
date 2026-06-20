@@ -4,7 +4,7 @@ using Xunit;
 
 namespace PeriodicTable.Tests;
 
-public class LayoutTests
+public class ElementGridTests
 {
     [Theory]
     [InlineData("H", 1, 1)]
@@ -18,7 +18,7 @@ public class LayoutTests
     [InlineData("Og", 18, 7)]
     public void CellOf_MainGrid(string symbol, int col, int row)
     {
-        var (c, r) = Layout.CellOf(Elements.BySymbol[symbol]);
+        var (c, r) = ElementGrid.CellOf(Elements.BySymbol[symbol]);
         c.ShouldBe(col);
         r.ShouldBe(row);
     }
@@ -31,7 +31,7 @@ public class LayoutTests
     [InlineData("Lr", 17, 9)]
     public void CellOf_FBlock(string symbol, int col, int row)
     {
-        var (c, r) = Layout.CellOf(Elements.BySymbol[symbol]);
+        var (c, r) = ElementGrid.CellOf(Elements.BySymbol[symbol]);
         c.ShouldBe(col);
         r.ShouldBe(row);
     }
@@ -39,10 +39,10 @@ public class LayoutTests
     [Fact]
     public void IsBlankMainCell_Period1_OnlyEdgesPopulated()
     {
-        Layout.IsBlankMainCell(1, 1).ShouldBeFalse();
-        Layout.IsBlankMainCell(2, 1).ShouldBeTrue();
-        Layout.IsBlankMainCell(17, 1).ShouldBeTrue();
-        Layout.IsBlankMainCell(18, 1).ShouldBeFalse();
+        ElementGrid.IsBlankMainCell(1, 1).ShouldBeFalse();
+        ElementGrid.IsBlankMainCell(2, 1).ShouldBeTrue();
+        ElementGrid.IsBlankMainCell(17, 1).ShouldBeTrue();
+        ElementGrid.IsBlankMainCell(18, 1).ShouldBeFalse();
     }
 
     [Theory]
@@ -57,19 +57,19 @@ public class LayoutTests
             // collapsed test: just verify that the populated cols are not blank
             // and the gap is blank, separately
         }
-        Layout.IsBlankMainCell(3, 2).ShouldBeTrue();
-        Layout.IsBlankMainCell(12, 2).ShouldBeTrue();
-        Layout.IsBlankMainCell(13, 2).ShouldBeFalse();
+        ElementGrid.IsBlankMainCell(3, 2).ShouldBeTrue();
+        ElementGrid.IsBlankMainCell(12, 2).ShouldBeTrue();
+        ElementGrid.IsBlankMainCell(13, 2).ShouldBeFalse();
     }
 
     [Fact]
     public void IsFBlockPlaceholder_OnlyAt_3_6_And_3_7()
     {
-        Layout.IsFBlockPlaceholder(3, 6).ShouldBeTrue();
-        Layout.IsFBlockPlaceholder(3, 7).ShouldBeTrue();
-        Layout.IsFBlockPlaceholder(2, 6).ShouldBeFalse();
-        Layout.IsFBlockPlaceholder(4, 6).ShouldBeFalse();
-        Layout.IsFBlockPlaceholder(3, 5).ShouldBeFalse();
+        ElementGrid.IsFBlockPlaceholder(3, 6).ShouldBeTrue();
+        ElementGrid.IsFBlockPlaceholder(3, 7).ShouldBeTrue();
+        ElementGrid.IsFBlockPlaceholder(2, 6).ShouldBeFalse();
+        ElementGrid.IsFBlockPlaceholder(4, 6).ShouldBeFalse();
+        ElementGrid.IsFBlockPlaceholder(3, 5).ShouldBeFalse();
     }
 
     [Fact]
@@ -77,9 +77,9 @@ public class LayoutTests
     {
         foreach (var e in Elements.All)
         {
-            var (c, r) = Layout.CellOf(e);
-            c.ShouldBeInRange(1, Layout.Columns, $"{e.Symbol} col");
-            r.ShouldBeInRange(1, Layout.TotalRows, $"{e.Symbol} row");
+            var (c, r) = ElementGrid.CellOf(e);
+            c.ShouldBeInRange(1, ElementGrid.Columns, $"{e.Symbol} col");
+            r.ShouldBeInRange(1, ElementGrid.TotalRows, $"{e.Symbol} row");
         }
     }
 
@@ -87,7 +87,7 @@ public class LayoutTests
     public void NoTwoElements_ShareSameCell()
     {
         var byCell = Elements.All
-            .GroupBy(e => Layout.CellOf(e))
+            .GroupBy(e => ElementGrid.CellOf(e))
             .Where(g => g.Count() > 1)
             .ToList();
         byCell.ShouldBeEmpty();

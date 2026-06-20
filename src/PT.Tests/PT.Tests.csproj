@@ -23,11 +23,16 @@
     <ProjectReference Include="..\PT.Tui\PT.Tui.csproj" />
   </ItemGroup>
 
+  <!-- Alias DIR.Lib.Layout -> qualified Layout.Node form (see PT.Tui.csproj). -->
+  <ItemGroup>
+    <Using Include="DIR.Lib.Layout" Alias="Layout" />
+  </ItemGroup>
+
   <!-- Same sibling-repo trick as PT.Tui.csproj — see src/Directory.Build.props. -->
   <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
     <ProjectReference Include="..\..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
-    <PackageReference Include="Console.Lib" Version="2.12.731" />
+    <PackageReference Include="Console.Lib" Version="3.3.*" />
   </ItemGroup>
 </Project>

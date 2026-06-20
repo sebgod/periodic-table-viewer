@@ -9,7 +9,7 @@ using Xunit;
 namespace PeriodicTable.Tests;
 
 /// <summary>
-/// Verifies that <see cref="PeriodicTableWidget"/>'s declarative <see cref="LayoutNode"/> tree, once
+/// Verifies that <see cref="PeriodicTableWidget"/>'s declarative <see cref="Layout.Node"/> tree, once
 /// arranged by the surface-agnostic engine, places every element at the expected terminal cell and that
 /// the cell painter's <see cref="CellLayout.HitTest"/> maps a click back to the right element -- i.e. the
 /// drawn rect IS the hit region (no separate forward/inverse cell arithmetic). This is the
@@ -17,14 +17,14 @@ namespace PeriodicTable.Tests;
 /// </summary>
 public class PeriodicTableLayoutTests
 {
-    private static ImmutableArray<ArrangedNode<int>> ArrangeTable(int selectedZ)
+    private static ImmutableArray<Layout.ArrangedNode<int>> ArrangeTable(int selectedZ)
     {
         var tree = PeriodicTableWidget.BuildTree(Elements.ByAtomicNumber[selectedZ]);
         var bounds = new Rect<int>(0, 0, PeriodicTableWidget.RenderedWidth, PeriodicTableWidget.RenderedHeight);
-        return LayoutEngine.Arrange(tree, bounds, new CellMeasureContext());
+        return Layout.Engine.Arrange(tree, bounds, new CellMeasureContext());
     }
 
-    private static ArrangedNode<int> CellOf(ImmutableArray<ArrangedNode<int>> arranged, int z) =>
+    private static Layout.ArrangedNode<int> CellOf(ImmutableArray<Layout.ArrangedNode<int>> arranged, int z) =>
         arranged.First(a => a.Node.Hit is HitResult.ListItemHit { ListId: "Element", Index: var i } && i == z);
 
     [Theory]
