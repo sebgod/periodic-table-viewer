@@ -28,15 +28,37 @@
     <Using Include="DIR.Lib.Layout" Alias="Layout" />
   </ItemGroup>
 
-  <!-- Console.Lib + transitive DIR.Lib: sibling-repo trick. When both
-       SharpAstro working copies exist next to this repo, build against
-       them via ProjectReference so changes to either are picked up
-       without a NuGet bump. CI builds (and any clone without the siblings)
-       fall through to the published PackageReference. -->
+  <!-- Console.Lib + DIR.Lib: sibling-repo trick. When both SharpAstro working
+       copies exist next to this repo, build against them via ProjectReference so
+       changes to either are picked up without a NuGet bump. CI builds (and any
+       clone without the siblings) fall through to the published PackageReference.
+       Versions live in src/Directory.Packages.props; the switch is in
+       src/Directory.Build.props.
+
+       DIR.Lib is named explicitly on both branches rather than left transitive:
+       this project uses its types directly (Layout.*, Rect<T>, RGBAColor32,
+       FontResolver, DockStyle), so the reference should say so. -->
   <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
     <ProjectReference Include="..\..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
+    <ProjectReference Include="..\..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
-    <PackageReference Include="Console.Lib" Version="3.3.*" />
+    <PackageReference Include="Console.Lib" />
+    <PackageReference Include="DIR.Lib" />
   </ItemGroup>
+
+  <!--
+    The debug inspector lives in Console.Lib / DIR.Lib behind #if DEBUG, so it exists only in a DEBUG
+    build of those libraries. A PUBLISHED package is built in Release, which means its inspector is
+    compiled out and this project could not reference it at all. So the wiring is gated on having the
+    siblings as PROJECT references in a Debug build — the same rule chess's Chess.Console lives by.
+
+    Locally that is the default (src/Directory.Build.props auto-detects the sibling checkouts). CI
+    restores packages, so CONSOLE_INSPECTOR is undefined there and none of this code is compiled —
+    which also keeps it out of the AOT publish.
+  -->
+  <PropertyGroup Condition="'$(UseLocalSiblings)' == 'true' AND '$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);CONSOLE_INSPECTOR</DefineConstants>
+  </PropertyGroup>
+
 </Project>

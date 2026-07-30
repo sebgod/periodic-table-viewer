@@ -9,14 +9,15 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+  <!-- Versions live in src/Directory.Packages.props. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Shouldly" Version="4.3.0" />
+    <PackageReference Include="Shouldly" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PT\PT.csproj" />
@@ -31,8 +32,10 @@
   <!-- Same sibling-repo trick as PT.Tui.csproj — see src/Directory.Build.props. -->
   <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
     <ProjectReference Include="..\..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
+    <ProjectReference Include="..\..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
-    <PackageReference Include="Console.Lib" Version="3.3.*" />
+    <PackageReference Include="Console.Lib" />
+    <PackageReference Include="DIR.Lib" />
   </ItemGroup>
 </Project>

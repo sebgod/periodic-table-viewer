@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tui-inspector": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": ["Console.Lib.Inspector", "--yes"]
+    }
+  }
+}

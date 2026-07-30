@@ -1,0 +1,31 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Allow the X.Y.* pins below to float. Console.Lib / DIR.Lib version as
+         <minor>.<CI run_number>, and that run number ticks by ~10 per push, so a
+         fixed patch would need a commit here every time a sibling republishes.
+         Floating keeps restore current within the pinned minor. -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+  </PropertyGroup>
+
+  <!--
+    Only the package path uses these: locally, src/Directory.Build.props detects the
+    sibling working copies and every project takes its ProjectReference branch instead.
+    That split is why these pins drifted 15 minors behind without anyone noticing — a
+    local build was already on 4.8/7.3 source while CI still restored 3.3. Keep them
+    moving with the siblings, or CI is testing a different library than you are.
+  -->
+  <ItemGroup>
+    <PackageVersion Include="Console.Lib" Version="4.9.*" />
+    <PackageVersion Include="DIR.Lib" Version="7.3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+  </ItemGroup>
+
+</Project>
