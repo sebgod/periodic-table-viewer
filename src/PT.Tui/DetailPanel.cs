@@ -32,15 +32,23 @@ public sealed class DetailPanel : CL.Widget
     private readonly CL.MarkdownWidget _md;
     private Element _element = Elements.ByAtomicNumber[1];
 
-    private readonly bool _expanded;
+    /// <summary>A math mode was supplied, so the expanded body is available at all.</summary>
+    private readonly bool _mathCapable;
+
+    /// <summary>Which body <see cref="_md"/> currently holds; see <see cref="Render"/>.</summary>
+    private bool _expanded;
 
     public DetailPanel(CL.ITerminalViewport viewport,
         CL.BoxRenderMode? mathMode = null, string? mathFontPath = null)
         : base(viewport)
     {
-        _expanded = mathMode is not null;
+        _mathCapable = mathMode is not null;
+        _expanded = _mathCapable;
         _md = new CL.MarkdownWidget(viewport)
         {
+            // Left set even when the card renders compact: compact emits only INLINE math, which is
+            // always single-row Unicode regardless of mode, so the mode is inert until a $$…$$ block
+            // appears. That is what lets Render flip between the two bodies without rebuilding _md.
             MathMode = mathMode,
             MathFontPath = mathFontPath,
         }.Markdown(BuildMarkdown(_element, _expanded));
@@ -52,7 +60,27 @@ public sealed class DetailPanel : CL.Widget
         _md.Markdown(BuildMarkdown(e, _expanded));
     }
 
-    public override void Render() => _md.Render();
+    /// <summary>
+    /// Renders the card, first re-bodying it if the rows it was ALLOCATED no longer match the body it is
+    /// holding.
+    ///
+    /// <para>Expansion has to be a function of the current viewport rather than a flag set once at
+    /// construction: <see cref="ViewerFrameLayout"/> re-costs the frame on every resize, so the same
+    /// panel can be handed 16 rows and then 5. A card that kept its startup answer would either draw a
+    /// math block into five rows or leave eleven rows blank. (<see cref="Soft.SixelDecayChainPanel"/>
+    /// reached the same conclusion independently for its legend — see its <c>MathLegendMinRows</c>.)</para>
+    /// </summary>
+    public override void Render()
+    {
+        var expanded = _mathCapable && Viewport.Size.Height >= RowsExpanded;
+        if (expanded != _expanded)
+        {
+            _expanded = expanded;
+            _md.Markdown(BuildMarkdown(_element, expanded));
+        }
+
+        _md.Render();
+    }
 
     /// <summary>
     /// Builds the markdown body. Header lines stay plain text + inline emphasis.

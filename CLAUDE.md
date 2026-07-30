@@ -19,7 +19,7 @@ The TUI cannot run inside the Claude Code shell — it detects redirected stdio 
 Three projects, layered:
 
 - **`src/PT`** — library (`PeriodicTable` namespace), pure managed, AOT-compatible. `Element` record + `Elements` static frozen-dictionary table covering all 118 elements (Z, symbol, name, group, period, block, category, atomic weight, electron config). `Layout` maps elements to (col, row) on the standard wide-form periodic-table grid. `Subscripts` provides char-level Unicode super/subscript helpers (no Console.Lib dep — usable from anywhere).
-- **`src/PT.Tui`** — `pt-tui` exe. Renders the table via `Console.Lib`. Entry point in `Program.cs`; the table itself is `PeriodicTableWidget`; the bottom card is `DetailPanel`. Soft-rendered text prototype lives under `Soft/` (see below).
+- **`src/PT.Tui`** — `pt-tui` exe. Renders the table via `Console.Lib`. Entry point in `Program.cs`; the frame is `ViewerFrameLayout` + `FrameHost` (see below); the table itself is `PeriodicTableWidget`; the bottom card is `DetailPanel`. Soft-rendered text prototype lives under `Soft/` (see below).
 - **`src/PT.Tests`** — xUnit.v3 + Shouldly. Covers element-data invariants, layout positioning, and Unicode subscript mappings.
 
 ### Element data provenance
@@ -38,6 +38,18 @@ Atomic weights, atomic-mass synthetic flags, electron configurations, and catego
 The widget renders 18 cols × 9 rows. Periods 1–7 are the main grid. Lanthanides (Z=57–71) occupy row 8 cols 3–17; actinides (Z=89–103) row 9 cols 3–17. La and Ac live only in the f-block rows; the (col=3, row=6) and (col=3, row=7) cells in the main grid render as "*" placeholders pointing to the f-block — this is the most common educational layout (not the IUPAC 2021 group-3 = Lu/Lr variant).
 
 Each cell is 5 cols × 3 rows (atomic number top-left, symbol centered, atomic mass bottom; the 5th col is padding so adjacent masses don't run together). One blank row separates main grid from f-block. Total rendered area: 90 × 28 terminal cells.
+
+### The frame: costed shape + slot-keyed tree
+
+`ViewerFrameLayout` decides how much chrome the terminal can afford and emits the whole arrangement as ONE `Layout.Node` tree of `Layout.Content.Fill(key:)` slots; `FrameHost` owns a viewport per slot and re-points them at each arrangement. This replaced a hand-computed dock budget in `Program.RunUi` that froze at startup — its own comment conceded "a too-narrow terminal just gets no orbital panel until the user restarts".
+
+- **Cost is table rows, saturating at 28.** The periodic table doesn't scale, so surplus rows above its natural height are worthless and must not outrank chrome that would use them. The richest shape reaching saturation wins. With `ViewerFrameMetrics.Widgets` this reproduces the old thresholds exactly (60 rows for `FullMath`, 51 for `DetailMath`).
+- **Compare against the saturation value, not against compact's cost.** Tempting, and wrong: a terminal too short to seat the table ties every shape at zero, and reading that as "whole either way" hands every remaining row to the richest chrome. Unit-tested (`OnASurfaceTooShortForTheTable_TheShapeStaysCompact`).
+- **Every leaf must state BOTH axes.** A `Fill` leaf has no intrinsic size, so a leaf setting one axis measures zero on the other and the region silently vanishes. Use `RowH` / `ColW` / `Stretch`, never a bare `.HFixed()`.
+- **Fixed sizing does not clamp to its container.** DIR.Lib's stack resolves a `Fixed` child at its stated extent and walks the cursor past the bounds — `TerminalLayout` used to absorb this, a tree has no such backstop. Hence the squeeze in `ViewerFrameLayout`'s constructor, which trims chrome in priority order (bars, detail, chain) so the tree only ever states extents that fit.
+- **`FrameHost.Place` iterates the HOSTS, not the arranged tree.** A slot the current shape omits has no leaf, and `Slot`'s empty rect is the right answer for it; walking the tree would skip that host and leave its viewport parked where it was — a stale orbital gutter painting over the table.
+- **Panels self-degrade on the rows they were given.** `SixelDecayChainPanel.MathLegendMinRows` and `DetailPanel.Render` both check the current viewport, so the frame decides how many rows to *spend* and the panels decide what fits. That is what lets a shape change on resize be honoured without rebuilding a widget, and why `Program` passes `BoxRenderMode.Sextant` as a capability rather than a layout decision.
+- **The resize path can only be tested in-process.** Under ConPTY the terminal emulator owns the window size, so it can't be changed from outside (see the run-tui skill). `FrameHostTests` drives it directly instead.
 
 ### Soft-rendered text (`Console.Lib.SoftText`)
 

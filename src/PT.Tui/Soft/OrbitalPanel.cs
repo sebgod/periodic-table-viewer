@@ -24,9 +24,15 @@ namespace PeriodicTable.Tui.Soft;
 /// Text fallback: a small ASCII-art icon of the corresponding shape so the
 /// panel is still useful on Sixel-less terminals.
 ///
-/// The panel is only docked when the terminal is wide enough at startup
-/// (see <see cref="MinViewportCols"/>); otherwise it is omitted entirely
-/// so the periodic table keeps its full width.
+/// The panel gets a gutter only when the terminal is wide enough for one
+/// past the table's own 90 columns — <see cref="ViewerFrameLayout"/> costs
+/// that and squeezes the gutter between <see cref="MinViewportCols"/> and
+/// <see cref="DockedWidth"/> rather than dropping it. Below the minimum the
+/// frame gives this slot no rect at all, which reads here as a zero-size
+/// viewport and an early return from <see cref="Render"/>; the periodic
+/// table keeps its full width. Because the frame is re-derived on resize and
+/// the Sixel surface is allocated lazily in <see cref="Render"/>, widening
+/// the terminal makes the panel appear without a restart.
 /// </summary>
 public sealed class OrbitalPanel : CL.Widget, IDisposable
 {
